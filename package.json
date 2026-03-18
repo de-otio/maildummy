@@ -1,7 +1,7 @@
 {
-  "name": "maildummy",
+  "name": "@deotio/maildummy",
   "version": "1.0.1",
-  "description": "SES Email Testing Infrastructure - Reusable Terraform module and helper utilities",
+  "description": "SES Email Testing Infrastructure",
   "main": "scripts/get-magic-link-from-s3.js",
   "scripts": {
     "get-magic-link": "node scripts/get-magic-link-from-s3.js"

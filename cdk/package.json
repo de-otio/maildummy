@@ -1,0 +1,36 @@
+{
+  "name": "@deotio/maildummy-cdk",
+  "version": "1.0.0",
+  "description": "AWS CDK construct for SES email testing infrastructure (maildummy)",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "aws",
+    "cdk",
+    "ses",
+    "email",
+    "testing",
+    "e2e",
+    "construct"
+  ],
+  "author": "",
+  "license": "MIT",
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ],
+  "peerDependencies": {
+    "aws-cdk-lib": "^2.100.0",
+    "constructs": "^10.0.0"
+  },
+  "devDependencies": {
+    "aws-cdk-lib": "^2.100.0",
+    "constructs": "^10.0.0",
+    "typescript": "^5.3.0"
+  }
+}

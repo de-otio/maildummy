@@ -18,3 +18,12 @@ Thumbs.db
 *.swo
 *~
 
+# doc-search index
+.doc-search-index
+
+# Node
+node_modules/
+
+# CDK build output
+cdk/lib/
+.claude/
