@@ -51,6 +51,6 @@
     "constructs": "^10.0.0",
     "jest": "^30.3.0",
     "ts-jest": "^29.4.6",
-    "typescript": "^5.3.0"
+    "typescript": "^6.0.2"
   }
 }
