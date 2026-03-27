@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
-    "prepublishOnly": "npm run build"
+    "test": "jest",
+    "prepublishOnly": "npm run build && npm run test"
   },
   "keywords": [
     "aws",
@@ -20,17 +21,36 @@
   ],
   "author": "",
   "license": "MIT",
+  "homepage": "https://github.com/deotio/maildummy#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deotio/maildummy.git",
+    "directory": "cdk"
+  },
+  "bugs": {
+    "url": "https://github.com/deotio/maildummy/issues"
+  },
+  "engines": {
+    "node": ">= 18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "lib/**/*.js",
-    "lib/**/*.d.ts"
+    "lib/**/*.d.ts",
+    "lib/**/*.d.ts.map"
   ],
   "peerDependencies": {
     "aws-cdk-lib": "^2.100.0",
     "constructs": "^10.0.0"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "aws-cdk-lib": "^2.100.0",
     "constructs": "^10.0.0",
+    "jest": "^30.3.0",
+    "ts-jest": "^29.4.6",
     "typescript": "^5.3.0"
   }
 }

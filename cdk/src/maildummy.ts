@@ -8,7 +8,6 @@ import {
   aws_ses as ses,
   aws_route53 as route53,
   aws_iam as iam,
-  aws_kms as kms,
 } from "aws-cdk-lib";
 
 export interface MaildummyProps {
@@ -107,6 +106,10 @@ export class Maildummy extends Construct {
     const enableDkim = props.enableDkim ?? false;
     const removalPolicy = props.bucketRemovalPolicy ?? RemovalPolicy.DESTROY;
 
+    if (!props.maildummyDomain || !/^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*$/.test(props.maildummyDomain)) {
+      throw new Error("maildummyDomain must be a valid domain name (e.g., maildummy.example.com)");
+    }
+
     if (emailRetentionDays < 1) {
       throw new Error("emailRetentionDays must be >= 1");
     }
@@ -146,8 +149,8 @@ export class Maildummy extends Construct {
         sid: "AllowSESPuts",
         effect: iam.Effect.ALLOW,
         principals: [new iam.ServicePrincipal("ses.amazonaws.com")],
-        actions: ["s3:PutObject", "s3:PutObjectAcl"],
-        resources: [this.bucket.arnForObjects("*")],
+        actions: ["s3:PutObject"],
+        resources: [this.bucket.arnForObjects("raw/*")],
         conditions: {
           StringEquals: {
             "AWS:SourceAccount": account,
@@ -163,17 +166,22 @@ export class Maildummy extends Construct {
 
     this.topic = new sns.Topic(this, "EmailTopic", {
       topicName: props.snsTopicName,
-      masterKey: kms.Alias.fromAliasName(this, "SnsKey", "alias/aws/sns"),
+      // No KMS encryption — SES cannot publish to KMS-encrypted SNS topics
+      // without explicit key policy grants, and the AWS-managed key
+      // (alias/aws/sns) doesn't allow modification. This is test infrastructure.
     });
 
-    // Allow SES to publish to the topic (intentionally simple — no conditions —
-    // to avoid AWS SES synchronous validation failures, matching the Terraform module).
     this.topic.addToResourcePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         principals: [new iam.ServicePrincipal("ses.amazonaws.com")],
         actions: ["SNS:Publish"],
         resources: [this.topic.topicArn],
+        conditions: {
+          StringEquals: {
+            "AWS:SourceAccount": account,
+          },
+        },
       })
     );
 
@@ -241,6 +249,9 @@ export class Maildummy extends Construct {
       });
 
       // DKIM CNAME records (SESv2 CfnEmailIdentity provides 3 DKIM tokens)
+      // Uses L1 CfnRecordSet because DkimDNSTokenName returns the full FQDN
+      // (e.g. token._domainkey.maildummy.example.com) and the L2 CnameRecord
+      // would append the zone name again.
       if (enableDkim) {
         for (let i = 1; i <= 3; i++) {
           const tokenName = this.domainIdentity
@@ -250,11 +261,12 @@ export class Maildummy extends Construct {
             .getAtt(`DkimDNSTokenValue${i}`)
             .toString();
 
-          new route53.CnameRecord(this, `DkimRecord${i}`, {
-            zone: props.hostedZone,
-            recordName: tokenName,
-            domainName: tokenValue,
-            ttl: Duration.seconds(300),
+          new route53.CfnRecordSet(this, `DkimRecord${i}`, {
+            hostedZoneId: props.hostedZone.hostedZoneId,
+            name: tokenName,
+            type: "CNAME",
+            ttl: "300",
+            resourceRecords: [tokenValue],
           });
         }
       }
