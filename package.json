@@ -1,5 +1,5 @@
 {
-  "name": "@deotio/maildummy",
+  "name": "@de-otio/maildummy",
   "version": "1.0.1",
   "description": "SES Email Testing Infrastructure",
   "main": "scripts/get-magic-link-from-s3.js",

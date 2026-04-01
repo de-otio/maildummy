@@ -1,5 +1,5 @@
 {
-  "name": "@deotio/maildummy-cdk",
+  "name": "@de-otio/maildummy-cdk",
   "version": "1.0.1",
   "description": "AWS CDK construct for SES email testing infrastructure (maildummy)",
   "main": "lib/index.js",
@@ -21,14 +21,14 @@
   ],
   "author": "",
   "license": "MIT",
-  "homepage": "https://github.com/deotio/maildummy#readme",
+  "homepage": "https://github.com/de-otio/maildummy#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deotio/maildummy.git",
+    "url": "git+https://github.com/de-otio/maildummy.git",
     "directory": "cdk"
   },
   "bugs": {
-    "url": "https://github.com/deotio/maildummy/issues"
+    "url": "https://github.com/de-otio/maildummy/issues"
   },
   "engines": {
     "node": ">= 18"
