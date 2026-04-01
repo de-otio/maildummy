@@ -45,7 +45,7 @@ const link = execSync(
 ### Using the module export
 
 ```ts
-const { getMagicLinkFromS3 } = require("@deotio/maildummy/scripts/get-magic-link-from-s3");
+const { getMagicLinkFromS3 } = require("@de-otio/maildummy/scripts/get-magic-link-from-s3");
 
 const link = await getMagicLinkFromS3("my-maildummy-bucket", testEmail, "eu-central-1");
 ```
@@ -56,7 +56,7 @@ Emails typically arrive within a few seconds, but delivery is not instant. Wrap 
 
 ```ts
 async function waitForMagicLink(bucket: string, email: string, region: string, timeoutMs = 30000) {
-  const { getMagicLinkFromS3 } = require("@deotio/maildummy/scripts/get-magic-link-from-s3");
+  const { getMagicLinkFromS3 } = require("@de-otio/maildummy/scripts/get-magic-link-from-s3");
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {

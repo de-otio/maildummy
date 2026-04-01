@@ -1,4 +1,4 @@
-# @deotio/maildummy-cdk
+# @de-otio/maildummy-cdk
 
 AWS CDK construct for SES email testing infrastructure. See the [main README](../README.md) for an overview and the [CDK construct reference](../docs/cdk.md) for full usage documentation.
 

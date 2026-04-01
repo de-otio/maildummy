@@ -15,7 +15,7 @@ Maildummy ships two equivalent ways to provision the AWS resources:
 | Option | Location | DNS support |
 |--------|----------|-------------|
 | **Terraform module** | `terraform/modules/ses_maildummy` | Cloudflare or Route53 |
-| **CDK construct** | `cdk/` (`@deotio/maildummy-cdk`) | Route53 (or bring your own) |
+| **CDK construct** | `cdk/` (`@de-otio/maildummy-cdk`) | Route53 (or bring your own) |
 
 Both create the same set of resources: SES domain identity, S3 bucket, SNS topic, SES receipt rule, and the required IAM policies.
 
@@ -48,7 +48,7 @@ module "maildummy" {
 ## Quick start (CDK)
 
 ```ts
-import { Maildummy } from "@deotio/maildummy-cdk";
+import { Maildummy } from "@de-otio/maildummy-cdk";
 
 new Maildummy(stack, "Maildummy", {
   maildummyDomain: "maildummy.example.com",

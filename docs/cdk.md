@@ -1,11 +1,11 @@
 # CDK construct reference
 
-Package: `@deotio/maildummy-cdk` (in the `cdk/` directory)
+Package: `@de-otio/maildummy-cdk` (in the `cdk/` directory)
 
 ## Installation
 
 ```bash
-npm install @deotio/maildummy-cdk
+npm install @de-otio/maildummy-cdk
 # or from git
 npm install github:your-org/maildummy#main
 ```
@@ -17,7 +17,7 @@ Peer dependencies: `aws-cdk-lib ^2.100.0`, `constructs ^10.0.0`.
 ### With Route53 DNS
 
 ```ts
-import { Maildummy } from "@deotio/maildummy-cdk";
+import { Maildummy } from "@de-otio/maildummy-cdk";
 import * as route53 from "aws-cdk-lib/aws-route53";
 
 const zone = route53.HostedZone.fromLookup(stack, "Zone", {
