@@ -10,6 +10,16 @@ terraform {
 # SES Domain Identity for maildummy domain (supports DKIM)
 resource "aws_ses_domain_identity" "maildummy" {
   domain = var.maildummy_domain
+
+  lifecycle {
+    # aws_region is deprecated and ignored; it may only repeat the provider's
+    # region. A different value used to point the policies and the MX record at a
+    # region the module is not deployed in.
+    precondition {
+      condition     = var.aws_region == null || var.aws_region == local.region
+      error_message = "aws_region is deprecated and the module now uses the provider's region (${local.region}). Remove aws_region, or configure the aws provider for ${coalesce(var.aws_region, "that region")}."
+    }
+  }
 }
 
 # Domain verification TXT record for SES (Route53)
@@ -269,13 +279,25 @@ resource "aws_route53_record" "maildummy_dkim" {
 # Once the domain is verified, DKIM tokens are available and can be used
 # for DKIM signing. The domain verification record takes precedence.
 
-# Get current AWS account ID
+# Account, region and partition all come from the provider configuration, so the
+# policies and the MX target follow wherever the module is deployed.
 data "aws_caller_identity" "current" {}
 
-# Build SES inbound endpoint dynamically from region
+data "aws_partition" "current" {}
+
+# aws 6 exposes the region as `region` and deprecates `name` and `id`; aws 5 has
+# no `region`, only `name`. A plain `.region` reference fails validation on aws 5
+# even inside try(), so the attribute is read by key with lookup(): it uses
+# `region` where it exists and only then touches `name`, which keeps the module
+# working on both without a deprecation warning.
+data "aws_region" "current" {}
+
 locals {
-  ses_inbound_endpoint = "inbound-smtp.${var.aws_region}.amazonaws.com"
+  region = try(lookup(data.aws_region.current, "region"), lookup(data.aws_region.current, "name"))
+
+  # SES inbound endpoint for the provider's region.
+  ses_inbound_endpoint = "inbound-smtp.${local.region}.amazonaws.com"
 
   # ARN of the receipt rule, used as AWS:SourceArn in the S3 and SNS policies.
-  receipt_rule_arn = "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:receipt-rule-set/${var.receipt_rule_set_name}:receipt-rule/${var.receipt_rule_name}"
+  receipt_rule_arn = "arn:${data.aws_partition.current.partition}:ses:${local.region}:${data.aws_caller_identity.current.account_id}:receipt-rule-set/${var.receipt_rule_set_name}:receipt-rule/${var.receipt_rule_name}"
 }
