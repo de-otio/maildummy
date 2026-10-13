@@ -26,7 +26,7 @@ module "ses_maildummy" {
 1. **Initialize git repository** (if not already done):
 
    ```bash
-   cd /Users/rmyers/repos/dot/maildummy
+   cd path/to/maildummy
    git init
    git add .
    git commit -m "Initial commit: Maildummy infrastructure module"

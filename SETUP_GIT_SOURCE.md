@@ -5,7 +5,7 @@ This guide will help you set up the maildummy module to be referenced via git so
 ## Step 1: Initialize Git Repository (if not already done)
 
 ```bash
-cd /Users/rmyers/repos/dot/maildummy
+cd path/to/maildummy
 
 # Check if git is initialized
 git status
@@ -17,7 +17,7 @@ git init
 ## Step 2: Create Initial Commit
 
 ```bash
-cd /Users/rmyers/repos/dot/maildummy
+cd path/to/maildummy
 
 # Add all files
 git add .
@@ -76,7 +76,7 @@ If you host your own copy of the repository, replace the URL with your own.
 For production use, create version tags:
 
 ```bash
-cd /Users/rmyers/repos/dot/maildummy
+cd path/to/maildummy
 
 # Create a version tag
 git tag v1.0.0
