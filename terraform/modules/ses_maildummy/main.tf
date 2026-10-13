@@ -17,6 +17,18 @@ resource "aws_ses_domain_identity" "maildummy" {
     # aws_region is deprecated and ignored; it may only repeat the provider's
     # region. A different value used to point the policies and the MX record at a
     # region the module is not deployed in.
+    # maildummy_subdomain is deprecated; if set it may only repeat the leading
+    # label(s) of maildummy_domain, so the two inputs cannot drift apart.
+    precondition {
+      condition = (
+        var.maildummy_subdomain == null
+        || var.maildummy_subdomain == ""
+        || local.subdomain == local.domain
+        || startswith(local.domain, "${local.subdomain}.")
+      )
+      error_message = "maildummy_subdomain (\"${coalesce(var.maildummy_subdomain, "-")}\") must be the leading part of maildummy_domain (\"${var.maildummy_domain}\"), i.e. the domain must equal it or start with \"<subdomain>.\". maildummy_subdomain is deprecated: the record names are derived from maildummy_domain, so you can remove it."
+    }
+
     precondition {
       condition     = var.aws_region == null || var.aws_region == local.region
       error_message = "aws_region is deprecated and the module now uses the provider's region (${local.region}). Remove aws_region, or configure the aws provider for ${coalesce(var.aws_region, "that region")}."
@@ -29,7 +41,7 @@ resource "aws_route53_record" "maildummy_verification" {
   count = var.dns_provider == "route53" ? 1 : 0
 
   zone_id = var.route53_zone_id
-  name    = "_amazonses.${var.maildummy_subdomain}"
+  name    = "_amazonses.${local.record_name_base}"
   type    = "TXT"
   ttl     = 300
   records = [aws_ses_domain_identity.maildummy.verification_token]
@@ -270,7 +282,7 @@ resource "aws_route53_record" "maildummy_mx" {
   count = var.dns_provider == "route53" ? 1 : 0
 
   zone_id = var.route53_zone_id
-  name    = var.maildummy_subdomain
+  name    = local.record_name_base
   type    = "MX"
   ttl     = 300
   records = ["10 ${local.ses_inbound_endpoint}"]
@@ -290,7 +302,7 @@ resource "aws_route53_record" "maildummy_dkim" {
   count = var.dns_provider == "route53" && var.enable_dkim ? 3 : 0
 
   zone_id = var.route53_zone_id
-  name    = "${aws_ses_domain_dkim.maildummy[0].dkim_tokens[count.index]}._domainkey.${var.maildummy_subdomain}"
+  name    = "${aws_ses_domain_dkim.maildummy[0].dkim_tokens[count.index]}._domainkey.${local.record_name_base}"
   type    = "CNAME"
   ttl     = 300
   records = ["${aws_ses_domain_dkim.maildummy[0].dkim_tokens[count.index]}.dkim.amazonses.com"]
@@ -317,6 +329,18 @@ locals {
   # Key prefix SES writes received mail under; the S3 policy and the lifecycle
   # rule are scoped to it.
   raw_prefix = "raw/"
+
+  # Normalised for comparison only; the domain identity uses var.maildummy_domain
+  # as given.
+  domain    = lower(trimsuffix(var.maildummy_domain, "."))
+  subdomain = var.maildummy_subdomain == null ? "" : lower(trimsuffix(var.maildummy_subdomain, "."))
+
+  # Route53 record names. Derived from maildummy_domain, as a fully qualified
+  # name, which Route53 accepts. A caller that still passes the deprecated
+  # maildummy_subdomain keeps the zone-relative names it had in 1.x: the provider
+  # stores `name` as configured and forces a replacement when it changes, so
+  # switching an existing record between relative and fully qualified recreates it.
+  record_name_base = var.maildummy_subdomain == null ? var.maildummy_domain : var.maildummy_subdomain
 
   region = try(lookup(data.aws_region.current, "region"), lookup(data.aws_region.current, "name"))
 

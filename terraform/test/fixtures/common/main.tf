@@ -12,7 +12,6 @@ module "maildummy_route53" {
   source = "../../../modules/ses_maildummy"
 
   maildummy_domain      = "maildummy.example.com"
-  maildummy_subdomain   = "maildummy"
   dns_provider          = "route53"
   route53_zone_id       = "Z0000000000EXAMPLE"
   s3_bucket_name        = "example-maildummy-r53"
@@ -28,7 +27,6 @@ module "maildummy" {
   source = "../../../modules/ses_maildummy"
 
   maildummy_domain      = "maildummy.example.net"
-  maildummy_subdomain   = "maildummy"
   dns_provider          = "none"
   s3_bucket_name        = "example-maildummy-cf"
   sns_topic_name        = "example-maildummy-cf"

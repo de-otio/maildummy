@@ -34,7 +34,6 @@ module "maildummy" {
   source = "github.com/your-org/maildummy//terraform/modules/ses_maildummy"
 
   maildummy_domain      = "maildummy.example.com"
-  maildummy_subdomain   = "maildummy"
   dns_provider          = "route53"
   route53_zone_id       = "Z1234567890ABC"
   s3_bucket_name        = "my-project-maildummy"

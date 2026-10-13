@@ -11,7 +11,6 @@ module "maildummy" {
   source = "github.com/your-org/maildummy//terraform/modules/ses_maildummy"
 
   maildummy_domain      = "maildummy.example.com"
-  maildummy_subdomain   = "maildummy"
   dns_provider          = "route53"
   route53_zone_id       = "Z1234567890ABC"
   s3_bucket_name        = "my-project-maildummy"
@@ -32,7 +31,6 @@ module "maildummy" {
   source = "github.com/your-org/maildummy//terraform/modules/ses_maildummy"
 
   maildummy_domain      = "maildummy.example.com"
-  maildummy_subdomain   = "maildummy"
   dns_provider          = "none"
   s3_bucket_name        = "my-project-maildummy"
   sns_topic_name        = "my-project-maildummy-notifications"
@@ -99,8 +97,8 @@ that rule instead.
 
 | Variable | Type | Required | Default | Description |
 |----------|------|----------|---------|-------------|
-| `maildummy_domain` | `string` | yes | — | Full domain, e.g. `maildummy.example.com` |
-| `maildummy_subdomain` | `string` | yes | — | Subdomain without zone, e.g. `maildummy` |
+| `maildummy_domain` | `string` | yes | — | Full domain, e.g. `maildummy.example.com`; the single source of the SES identity and the record names |
+| `maildummy_subdomain` | `string` | no | `null` | Deprecated. Record names are derived from `maildummy_domain`. If set, `maildummy_domain` must equal it or start with `"<subdomain>."`, or the plan fails. Existing Route53 deployments should keep it (see [Upgrading](#upgrading-from-1x-to-20)). |
 | `dns_provider` | `string` | no | `"none"` | `"route53"` or `"none"` |
 | `route53_zone_id` | `string` | if route53 | `null` | Route53 hosted zone ID |
 | `aws_region` | `string` | no | `null` | Deprecated and ignored: the module uses the aws provider's region. If set, it must equal that region or the plan fails. |
@@ -170,6 +168,23 @@ makes S3 ignore ACLs anyway. The `removed` block (needs Terraform or OpenTofu >=
 only makes the plan say so. If you read objects in the bucket with
 anything that relies on ACLs, or a client that talks plain HTTP, it breaks; the
 module itself and SES delivery do not.
+
+**`maildummy_subdomain`:** `maildummy_domain` is now the only name input and the
+Route53 records are named after it, fully qualified (for example
+`_amazonses.maildummy.example.com`). `maildummy_subdomain` is optional and
+deprecated; if you set it, the plan fails unless `maildummy_domain` equals it or
+starts with `"<subdomain>."`, so the two can no longer drift apart.
+
+**Route53 users, read this before removing `maildummy_subdomain`:** 1.x named the
+records relative to the zone (`_amazonses.maildummy`). The aws provider stores
+`aws_route53_record.name` as configured (lower-cased, trailing dot removed) and
+treats a change to it as forcing replacement, so a relative name and the equivalent
+fully qualified name are different values. While `maildummy_subdomain` stays set the
+module keeps the relative names and the plan shows no change. Once you remove it, the
+names become fully qualified and the provider replaces the verification, MX and DKIM
+records (destroy, then create), leaving a short gap in DNS for each. Keep
+`maildummy_subdomain` for as long as you want to avoid that; new deployments should
+leave it out. The `dns_records` output was already fully qualified and is unchanged.
 
 **Route53 users:** `dns_provider` no longer defaults to `"cloudflare"`, so keep
 `dns_provider = "route53"` set explicitly. If `enable_dkim = true`, the DKIM
