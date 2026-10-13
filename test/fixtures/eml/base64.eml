@@ -1,0 +1,12 @@
+Return-Path: <noreply@example.org>
+From: App <noreply@example.org>
+To: b64@example.com
+Subject: Sign in
+Date: Tue, 13 Oct 2026 09:00:00 +0000
+Message-ID: <fixture@example.org>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+U2lnbiBpbjogaHR0cHM6Ly9hcHAuZXhhbXBsZS5jb20vYXV0aC92ZXJpZnk/dG9rZW49YjY0MTIz
+JnR5cGU9bWFnaWNsaW5rCg==
