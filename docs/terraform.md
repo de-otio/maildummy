@@ -110,7 +110,7 @@ that rule instead.
 | `receipt_rule_name` | `string` | yes | — | Name for the new receipt rule |
 | `receipt_rule_after` | `string` | no | `null` | Existing rule to place this rule after; `null` inserts it first |
 | `email_retention_days` | `number` | no | `1` | Days before emails are auto-deleted (must be > 0) |
-| `tags` | `map(string)` | no | `{}` | Tags applied to all taggable resources |
+| `tags` | `map(string)` | no | `{}` | Tags applied to the S3 bucket and the SNS topic (the other resources are not taggable in the provider) |
 | `enable_dkim` | `bool` | no | `false` | Enable Easy DKIM and publish its three CNAME records; works on the first apply |
 | `wait_for_verification` | `bool` | no | `false` | Block the apply until SES reports the domain as verified |
 | `verification_timeout` | `string` | no | `"15m"` | How long `wait_for_verification` waits (e.g. `"90s"`, `"15m"`, `"1h"`) |
