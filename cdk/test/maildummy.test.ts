@@ -364,6 +364,63 @@ describe("Maildummy", () => {
     });
   });
 
+  describe("SNS topic policy source ARN", () => {
+    it("scopes SES publish to the receipt rule with a partition token", () => {
+      const { template } = createStack();
+      template.hasResourceProperties("AWS::SNS::TopicPolicy", {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Action: "SNS:Publish",
+              Condition: {
+                StringEquals: { "AWS:SourceAccount": "123456789012" },
+                ArnLike: {
+                  "AWS:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:",
+                        { Ref: "AWS::Partition" },
+                        ":ses:us-east-1:123456789012:receipt-rule-set/my-rule-set:receipt-rule/Test-maildummy-rule",
+                      ],
+                    ],
+                  },
+                },
+              },
+            }),
+          ]),
+        },
+      });
+    });
+
+    it("matches the name of the receipt rule that publishes to it", () => {
+      const { template } = createStack({
+        ...defaultProps,
+        receiptRuleSetName: "other-set",
+      });
+      const rules = template.findResources("AWS::SES::ReceiptRule");
+      const ruleName = Object.values(rules)[0].Properties.Rule.Name as string;
+      const policies = template.findResources("AWS::SNS::TopicPolicy");
+      expect(JSON.stringify(Object.values(policies)[0])).toContain(
+        `receipt-rule-set/other-set:receipt-rule/${ruleName}`
+      );
+    });
+
+    it("has no circular dependency between policy, topic and rule", () => {
+      // Synthesis throws on a dependency cycle.
+      expect(() => createStack({ ...defaultProps, createRuleSet: true })).not.toThrow();
+    });
+
+    it("never uses a literal arn:aws partition anywhere in the template", () => {
+      const { template } = createStack({
+        ...defaultProps,
+        createRuleSet: true,
+        activateRuleSet: true,
+      });
+      expect(JSON.stringify(template.toJSON())).not.toMatch(/arn:aws[a-z-]*:/);
+    });
+  });
+
   // ── SES Receipt Rule ─────────────────────────────────────────────
 
   describe("SES receipt rule", () => {
