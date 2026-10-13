@@ -21,5 +21,8 @@ jobs:
       !contains(github.event.head_commit.message, '[skip ci]') &&
       (github.event.head_commit.author.username == 'dependabot[bot]' ||
        contains(github.event.head_commit.message, 'dependabot[bot]'))
-    uses: de-otio/.github/.github/workflows/dependabot-release-on-bump.yml@main
-    secrets: inherit
+    # Pinned to a commit SHA; refresh with:
+    #   gh api repos/de-otio/.github/commits/main --jq .sha
+    # No `secrets: inherit`: the called workflow only uses the automatic
+    # GITHUB_TOKEN, which is passed to reusable workflows implicitly.
+    uses: de-otio/.github/.github/workflows/dependabot-release-on-bump.yml@78d17f9083c183ecd05379e1e65744c9228f454a # main
