@@ -2,19 +2,38 @@
 
 Module path: `terraform/modules/ses_maildummy`
 
+## Versioning and pinning
+
+The repository uses one tag series per artifact:
+
+| Tag | Artifact | Used by |
+|-----|----------|---------|
+| `tf-v<version>` | Terraform modules under `terraform/modules/` | `source = "...?ref=tf-v<version>"` |
+| `cdk-v<version>` | `@de-otio/maildummy-cdk` on npm | Creating a release with this tag runs the publish workflow, which refuses to publish unless the tag matches the version in `cdk/package.json` |
+
+The Node and Python helpers are installed from git and have no tag series of their own; pin them to a tag or a commit as described in [Helper scripts](helper-scripts.md).
+
+See the repository's Tags page for what has been published. Always pin the module in your own configuration: `?ref=main` changes under you on every merge. Pin to a `tf-v<version>` tag, or, for a stronger guarantee, to a full 40-character commit SHA. A tag can in principle be moved or re-created; a commit SHA cannot, so a SHA is the pin to use when you want to be certain which code you apply. Check `git rev-parse tf-v<version>^{commit}` once and record the SHA next to the tag.
+
+```hcl
+source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy?ref=tf-v<version>"
+# or, stronger:
+source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy?ref=<full-commit-sha>"
+```
+
 ## Usage
+
+The examples below omit the `?ref=` for brevity; add one as described above.
 
 ### Route53
 
 ```hcl
 module "maildummy" {
-  source = "github.com/your-org/maildummy//terraform/modules/ses_maildummy"
+  source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy"
 
   maildummy_domain      = "maildummy.example.com"
-  maildummy_subdomain   = "maildummy"
   dns_provider          = "route53"
   route53_zone_id       = "Z1234567890ABC"
-  aws_region            = "eu-central-1"
   s3_bucket_name        = "my-project-maildummy"
   sns_topic_name        = "my-project-maildummy-notifications"
   receipt_rule_set_name = "my-existing-ruleset"
@@ -30,12 +49,10 @@ module, `terraform/modules/ses_maildummy_cloudflare`, which takes the core modul
 
 ```hcl
 module "maildummy" {
-  source = "github.com/your-org/maildummy//terraform/modules/ses_maildummy"
+  source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy"
 
   maildummy_domain      = "maildummy.example.com"
-  maildummy_subdomain   = "maildummy"
   dns_provider          = "none"
-  aws_region            = "eu-central-1"
   s3_bucket_name        = "my-project-maildummy"
   sns_topic_name        = "my-project-maildummy-notifications"
   receipt_rule_set_name = "my-existing-ruleset"
@@ -43,7 +60,7 @@ module "maildummy" {
 }
 
 module "maildummy_cloudflare" {
-  source = "github.com/your-org/maildummy//terraform/modules/ses_maildummy_cloudflare"
+  source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy_cloudflare"
 
   zone_id     = "your-zone-id"
   dns_records = module.maildummy.dns_records
@@ -57,7 +74,7 @@ Set `dns_provider = "none"` and publish the records in the `dns_records` output
 
 ## Prerequisites
 
-- Terraform >= 1.0 or OpenTofu
+- Terraform >= 1.7 or OpenTofu >= 1.7 (the module uses a `removed` block)
 - AWS provider >= 5.0, < 7.0 (both 5.x and 6.x are tested)
 - Cloudflare provider >= 5.12.0, < 6.0.0, only if you use the `ses_maildummy_cloudflare` module
 - An SES receipt rule set, active in the region (see [Receipt rule set](#receipt-rule-set))
@@ -89,7 +106,7 @@ that rule instead.
 | Resource | Purpose |
 |----------|---------|
 | `aws_ses_domain_identity` | Verifies the maildummy domain with SES |
-| `aws_s3_bucket` + policies | Stores emails under `raw/`, encrypted (AES256), lifecycle-managed |
+| `aws_s3_bucket` + policies | Stores emails under `raw/`, encrypted (AES256), lifecycle-managed. ACLs disabled (`BucketOwnerEnforced`); the policy lets SES `s3:PutObject` under `raw/*` only and denies requests that do not use TLS |
 | `aws_sns_topic` + policy | Optional email-arrival notifications (unencrypted unless `sns_kms_key_arn` is set); policy limited to this account's receipt rule |
 | `aws_ses_receipt_rule` | Routes inbound mail to S3 (and optionally SNS) |
 | `aws_ses_receipt_rule_set` | Only when `create_rule_set = true` |
@@ -101,11 +118,11 @@ that rule instead.
 
 | Variable | Type | Required | Default | Description |
 |----------|------|----------|---------|-------------|
-| `maildummy_domain` | `string` | yes | — | Full domain, e.g. `maildummy.example.com` |
-| `maildummy_subdomain` | `string` | yes | — | Subdomain without zone, e.g. `maildummy` |
+| `maildummy_domain` | `string` | yes | — | Full domain, e.g. `maildummy.example.com`; the single source of the SES identity and the record names |
+| `maildummy_subdomain` | `string` | no | `null` | Deprecated. Record names are derived from `maildummy_domain`. If set, `maildummy_domain` must equal it or start with `"<subdomain>."`, or the plan fails. Existing Route53 deployments should keep it (see [Upgrading](#upgrading-from-1x-to-20)). |
 | `dns_provider` | `string` | no | `"none"` | `"route53"` or `"none"` |
 | `route53_zone_id` | `string` | if route53 | `null` | Route53 hosted zone ID |
-| `aws_region` | `string` | no | `"eu-central-1"` | AWS region for SES |
+| `aws_region` | `string` | no | `null` | Deprecated and ignored: the module uses the aws provider's region. If set, it must equal that region or the plan fails. |
 | `s3_bucket_name` | `string` | yes | — | S3 bucket name |
 | `sns_topic_name` | `string` | yes | — | SNS topic name |
 | `receipt_rule_set_name` | `string` | yes | — | Receipt rule set that holds the rule (must exist unless `create_rule_set`) |
@@ -114,7 +131,7 @@ that rule instead.
 | `receipt_rule_name` | `string` | yes | — | Name for the new receipt rule |
 | `receipt_rule_after` | `string` | no | `null` | Existing rule to place this rule after; `null` inserts it first |
 | `email_retention_days` | `number` | no | `1` | Days before emails are auto-deleted (must be > 0) |
-| `tags` | `map(string)` | no | `{}` | Tags applied to all taggable resources |
+| `tags` | `map(string)` | no | `{}` | Tags applied to the S3 bucket and the SNS topic (the other resources are not taggable in the provider) |
 | `enable_dkim` | `bool` | no | `false` | Enable Easy DKIM and publish its three CNAME records; works on the first apply |
 | `wait_for_verification` | `bool` | no | `false` | Block the apply until SES reports the domain as verified |
 | `verification_timeout` | `string` | no | `"15m"` | How long `wait_for_verification` waits (e.g. `"90s"`, `"15m"`, `"1h"`) |
@@ -151,6 +168,44 @@ Output: `record_ids` (`verification`, `mx`, `dkim`).
 topics encrypted with it), so the plan shows an in-place update removing its
 encryption; set `sns_kms_key_arn` to a customer-managed key to keep it encrypted.
 The topic policy gains `AWS:SourceAccount` and `AWS:SourceArn` conditions.
+
+The region and partition now come from the `aws` provider (`data.aws_region`,
+`data.aws_partition`) instead of `var.aws_region` and a literal `arn:aws`. They feed
+the receipt-rule ARN in the S3 and SNS policies and the MX target. `aws_region` is
+deprecated and ignored: remove it. If you keep it, it must equal the provider's
+region or the plan fails with a precondition error. If you relied on the old default
+(`eu-central-1`) with a provider in another region, the policies and the MX record
+were wrong; the next plan corrects them in place.
+
+**S3 bucket:** object ownership changes from `BucketOwnerPreferred` to
+`BucketOwnerEnforced`, which disables ACLs, and the module no longer manages
+`aws_s3_bucket_acl`. The bucket policy drops `s3:PutObjectAcl`, limits the SES grant
+to `<bucket>/raw/*` (the prefix the receipt rule writes to) and gains a Deny for all
+principals when `aws:SecureTransport` is `false`. The plan shows in-place updates of
+the ownership controls and the bucket policy, and the ACL resource as "will no
+longer be managed, but will not be destroyed". Nothing is deleted in AWS: the
+provider's delete for `aws_s3_bucket_acl` makes no API call, and `BucketOwnerEnforced`
+makes S3 ignore ACLs anyway. The `removed` block (needs Terraform or OpenTofu >= 1.7)
+only makes the plan say so. If you read objects in the bucket with
+anything that relies on ACLs, or a client that talks plain HTTP, it breaks; the
+module itself and SES delivery do not.
+
+**`maildummy_subdomain`:** `maildummy_domain` is now the only name input and the
+Route53 records are named after it, fully qualified (for example
+`_amazonses.maildummy.example.com`). `maildummy_subdomain` is optional and
+deprecated; if you set it, the plan fails unless `maildummy_domain` equals it or
+starts with `"<subdomain>."`, so the two can no longer drift apart.
+
+**Route53 users, read this before removing `maildummy_subdomain`:** 1.x named the
+records relative to the zone (`_amazonses.maildummy`). The aws provider stores
+`aws_route53_record.name` as configured (lower-cased, trailing dot removed) and
+treats a change to it as forcing replacement, so a relative name and the equivalent
+fully qualified name are different values. While `maildummy_subdomain` stays set the
+module keeps the relative names and the plan shows no change. Once you remove it, the
+names become fully qualified and the provider replaces the verification, MX and DKIM
+records (destroy, then create), leaving a short gap in DNS for each. Keep
+`maildummy_subdomain` for as long as you want to avoid that; new deployments should
+leave it out. The `dns_records` output was already fully qualified and is unchanged.
 
 **Route53 users:** `dns_provider` no longer defaults to `"cloudflare"`, so keep
 `dns_provider = "route53"` set explicitly. If `enable_dkim = true`, the DKIM

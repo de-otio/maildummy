@@ -31,13 +31,12 @@ Both create the same set of resources: SES domain identity, S3 bucket, SNS topic
 
 ```hcl
 module "maildummy" {
-  source = "github.com/your-org/maildummy//terraform/modules/ses_maildummy"
+  # Pin a release tag (tf-v<version>) or a full commit SHA; see docs/terraform.md
+  source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy?ref=tf-v<version>"
 
   maildummy_domain      = "maildummy.example.com"
-  maildummy_subdomain   = "maildummy"
   dns_provider          = "route53"
   route53_zone_id       = "Z1234567890ABC"
-  aws_region            = "eu-central-1"
   s3_bucket_name        = "my-project-maildummy"
   sns_topic_name        = "my-project-maildummy-notifications"
   receipt_rule_set_name = "my-existing-ruleset"

@@ -1,5 +1,9 @@
 name: Publish to npm
 
+# Publishes @de-otio/maildummy-cdk (the cdk/ package) via npm Trusted Publishing
+# (OIDC, no NPM_TOKEN). Only a release whose tag is `cdk-v<version>` publishes;
+# Terraform releases (`tf-v*`) and anything else are skipped by the job `if:`.
+
 on:
   release:
     types: [published]
@@ -8,8 +12,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   publish:
+    # Defence in depth, step 1: a tf-v* (or any non cdk-v*) release never
+    # starts this job. Step 2 is the exact tag/version check below.
+    if: startsWith(github.event.release.tag_name, 'cdk-v')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -18,24 +28,54 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          # Node 24 ships npm 11, which Trusted Publishing needs (>= 11.5.1).
+          node-version: 24
           registry-url: 'https://registry.npmjs.org'
 
-      # npm >= 11.5.1 is required for OIDC trusted publishing
-      - run: npm install -g npm@latest
+      # NODE_AUTH_TOKEN must stay unset anywhere in this workflow: if present,
+      # npm uses it instead of the OIDC exchange and Trusted Publishing never
+      # engages.
+      - name: Require npm >= 11.5.1
+        run: |
+          required=11.5.1
+          have=$(npm --version)
+          echo "npm $have (need >= $required)"
+          oldest=$(printf '%s\n%s\n' "$required" "$have" | sort -V | head -n1)
+          if [ "$oldest" != "$required" ]; then
+            echo "::error::npm $have is older than $required; Trusted Publishing needs >= $required"
+            exit 1
+          fi
+
+      - name: Check release tag matches cdk/package.json version
+        working-directory: cdk
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          expected="cdk-v${version}"
+          if [ "$TAG" != "$expected" ]; then
+            echo "::error::Release tag '$TAG' does not match cdk/package.json version (expected '$expected')"
+            exit 1
+          fi
+          echo "Tag $TAG matches package version $version"
 
       - name: Install dependencies
         working-directory: cdk
+        timeout-minutes: 10
         run: npm ci
 
       - name: Build and test
         working-directory: cdk
+        timeout-minutes: 10
         run: npm run build && npm test
 
       - name: Publish
         working-directory: cdk
+        timeout-minutes: 5
         run: npm publish --provenance --access public

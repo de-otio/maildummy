@@ -10,13 +10,19 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+permissions:
+  contents: read
+
 jobs:
+  # CDK construct (cdk/).
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -25,6 +31,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: cdk
+        timeout-minutes: 5
         run: npm ci
 
       - name: Build
@@ -35,6 +42,72 @@ jobs:
         working-directory: cdk
         run: npx jest --coverage
 
+  # Node.js helper (repo root): lib/, bin/, test/.
+  js:
+    name: JS helper (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # package.json engines is ">=20"; cover the floor and the current LTS.
+        node: [20, 24]
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        timeout-minutes: 5
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+  # Python helper (python/).
+  python:
+    name: Python helper (${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # pyproject requires-python is ">=3.11"; cover the floor and the latest.
+        python: ['3.11', '3.13']
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: python/pyproject.toml
+
+      - name: Install package with dev extras
+        timeout-minutes: 5
+        run: pip install -e "python[dev]"
+
+      - name: Type-check (mypy --strict)
+        working-directory: python
+        run: mypy --strict src tests
+
+      - name: Test
+        working-directory: python
+        run: pytest
+
+  # OpenTofu modules and fixtures (terraform/).
   terraform:
     name: OpenTofu (${{ matrix.fixture }})
     runs-on: ubuntu-latest
@@ -47,6 +120,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@v2

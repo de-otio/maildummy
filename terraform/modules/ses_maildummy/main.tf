@@ -1,4 +1,6 @@
 terraform {
+  required_version = ">= 1.7"
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -10,6 +12,28 @@ terraform {
 # SES Domain Identity for maildummy domain (supports DKIM)
 resource "aws_ses_domain_identity" "maildummy" {
   domain = var.maildummy_domain
+
+  lifecycle {
+    # aws_region is deprecated and ignored; it may only repeat the provider's
+    # region. A different value used to point the policies and the MX record at a
+    # region the module is not deployed in.
+    # maildummy_subdomain is deprecated; if set it may only repeat the leading
+    # label(s) of maildummy_domain, so the two inputs cannot drift apart.
+    precondition {
+      condition = (
+        var.maildummy_subdomain == null
+        || var.maildummy_subdomain == ""
+        || local.subdomain == local.domain
+        || startswith(local.domain, "${local.subdomain}.")
+      )
+      error_message = "maildummy_subdomain (\"${coalesce(var.maildummy_subdomain, "-")}\") must be the leading part of maildummy_domain (\"${var.maildummy_domain}\"), i.e. the domain must equal it or start with \"<subdomain>.\". maildummy_subdomain is deprecated: the record names are derived from maildummy_domain, so you can remove it."
+    }
+
+    precondition {
+      condition     = var.aws_region == null || var.aws_region == local.region
+      error_message = "aws_region is deprecated and the module now uses the provider's region (${local.region}). Remove aws_region, or configure the aws provider for ${coalesce(var.aws_region, "that region")}."
+    }
+  }
 }
 
 # Domain verification TXT record for SES (Route53)
@@ -17,7 +41,7 @@ resource "aws_route53_record" "maildummy_verification" {
   count = var.dns_provider == "route53" ? 1 : 0
 
   zone_id = var.route53_zone_id
-  name    = "_amazonses.${var.maildummy_subdomain}"
+  name    = "_amazonses.${local.record_name_base}"
   type    = "TXT"
   ttl     = 300
   records = [aws_ses_domain_identity.maildummy.verification_token]
@@ -44,26 +68,28 @@ resource "aws_s3_bucket" "maildummy" {
   bucket = var.s3_bucket_name
 
   tags = var.tags
-
-  lifecycle {
-    prevent_destroy = false
-  }
 }
 
-# Allow SES to set ACLs on delivered objects.
+# ACLs are disabled: the bucket owner owns every object, and access is granted
+# only through the bucket policy. SES delivery needs just s3:PutObject (see
+# "Give SES permission to write to an S3 bucket" in the SES developer guide).
 resource "aws_s3_bucket_ownership_controls" "maildummy" {
   bucket = aws_s3_bucket.maildummy.id
 
   rule {
-    object_ownership = "BucketOwnerPreferred"
+    object_ownership = "BucketOwnerEnforced"
   }
 }
 
-resource "aws_s3_bucket_acl" "maildummy" {
-  bucket = aws_s3_bucket.maildummy.id
-  acl    = "private"
+# 1.x managed the bucket ACL. Destroying aws_s3_bucket_acl only drops it from
+# state (the provider's delete is a no-op), so this block just makes the plan say
+# so instead of "destroy". Requires Terraform or OpenTofu >= 1.7.
+removed {
+  from = aws_s3_bucket_acl.maildummy
 
-  depends_on = [aws_s3_bucket_ownership_controls.maildummy]
+  lifecycle {
+    destroy = false
+  }
 }
 
 # Enable server-side encryption for S3 bucket
@@ -86,7 +112,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "maildummy" {
     status = "Enabled"
 
     filter {
-      prefix = "raw/"
+      prefix = local.raw_prefix
     }
 
     expiration {
@@ -155,7 +181,7 @@ resource "aws_ses_receipt_rule" "maildummy" {
   # S3 action - store emails in S3
   s3_action {
     bucket_name       = aws_s3_bucket.maildummy.id
-    object_key_prefix = "raw/"
+    object_key_prefix = local.raw_prefix
     position          = 1
   }
 
@@ -175,7 +201,8 @@ resource "aws_ses_receipt_rule" "maildummy" {
   ]
 }
 
-# IAM policy for SES to write to S3 bucket
+# Bucket policy: SES may write under the raw prefix only, and every request must
+# use TLS.
 resource "aws_s3_bucket_policy" "maildummy" {
   bucket = aws_s3_bucket.maildummy.id
 
@@ -188,17 +215,29 @@ resource "aws_s3_bucket_policy" "maildummy" {
         Principal = {
           Service = "ses.amazonaws.com"
         }
-        Action = [
-          "s3:PutObject",
-          "s3:PutObjectAcl"
-        ]
-        Resource = "${aws_s3_bucket.maildummy.arn}/*"
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.maildummy.arn}/${local.raw_prefix}*"
         Condition = {
           StringEquals = {
             "AWS:SourceAccount" = data.aws_caller_identity.current.account_id
           }
           ArnLike = {
             "AWS:SourceArn" = local.receipt_rule_arn
+          }
+        }
+      },
+      {
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          aws_s3_bucket.maildummy.arn,
+          "${aws_s3_bucket.maildummy.arn}/*",
+        ]
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
           }
         }
       }
@@ -239,7 +278,7 @@ resource "aws_route53_record" "maildummy_mx" {
   count = var.dns_provider == "route53" ? 1 : 0
 
   zone_id = var.route53_zone_id
-  name    = var.maildummy_subdomain
+  name    = local.record_name_base
   type    = "MX"
   ttl     = 300
   records = ["10 ${local.ses_inbound_endpoint}"]
@@ -259,7 +298,7 @@ resource "aws_route53_record" "maildummy_dkim" {
   count = var.dns_provider == "route53" && var.enable_dkim ? 3 : 0
 
   zone_id = var.route53_zone_id
-  name    = "${aws_ses_domain_dkim.maildummy[0].dkim_tokens[count.index]}._domainkey.${var.maildummy_subdomain}"
+  name    = "${aws_ses_domain_dkim.maildummy[0].dkim_tokens[count.index]}._domainkey.${local.record_name_base}"
   type    = "CNAME"
   ttl     = 300
   records = ["${aws_ses_domain_dkim.maildummy[0].dkim_tokens[count.index]}.dkim.amazonses.com"]
@@ -269,13 +308,41 @@ resource "aws_route53_record" "maildummy_dkim" {
 # Once the domain is verified, DKIM tokens are available and can be used
 # for DKIM signing. The domain verification record takes precedence.
 
-# Get current AWS account ID
+# Account, region and partition all come from the provider configuration, so the
+# policies and the MX target follow wherever the module is deployed.
 data "aws_caller_identity" "current" {}
 
-# Build SES inbound endpoint dynamically from region
+data "aws_partition" "current" {}
+
+# aws 6 exposes the region as `region` and deprecates `name` and `id`; aws 5 has
+# no `region`, only `name`. A plain `.region` reference fails validation on aws 5
+# even inside try(), so the attribute is read by key with lookup(): it uses
+# `region` where it exists and only then touches `name`, which keeps the module
+# working on both without a deprecation warning.
+data "aws_region" "current" {}
+
 locals {
-  ses_inbound_endpoint = "inbound-smtp.${var.aws_region}.amazonaws.com"
+  # Key prefix SES writes received mail under; the S3 policy and the lifecycle
+  # rule are scoped to it.
+  raw_prefix = "raw/"
+
+  # Normalised for comparison only; the domain identity uses var.maildummy_domain
+  # as given.
+  domain    = lower(trimsuffix(var.maildummy_domain, "."))
+  subdomain = var.maildummy_subdomain == null ? "" : lower(trimsuffix(var.maildummy_subdomain, "."))
+
+  # Route53 record names. Derived from maildummy_domain, as a fully qualified
+  # name, which Route53 accepts. A caller that still passes the deprecated
+  # maildummy_subdomain keeps the zone-relative names it had in 1.x: the provider
+  # stores `name` as configured and forces a replacement when it changes, so
+  # switching an existing record between relative and fully qualified recreates it.
+  record_name_base = var.maildummy_subdomain == null ? var.maildummy_domain : var.maildummy_subdomain
+
+  region = try(lookup(data.aws_region.current, "region"), lookup(data.aws_region.current, "name"))
+
+  # SES inbound endpoint for the provider's region.
+  ses_inbound_endpoint = "inbound-smtp.${local.region}.amazonaws.com"
 
   # ARN of the receipt rule, used as AWS:SourceArn in the S3 and SNS policies.
-  receipt_rule_arn = "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:receipt-rule-set/${var.receipt_rule_set_name}:receipt-rule/${var.receipt_rule_name}"
+  receipt_rule_arn = "arn:${data.aws_partition.current.partition}:ses:${local.region}:${data.aws_caller_identity.current.account_id}:receipt-rule-set/${var.receipt_rule_set_name}:receipt-rule/${var.receipt_rule_name}"
 }

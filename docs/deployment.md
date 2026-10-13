@@ -104,7 +104,10 @@ With `dns_provider = "none"`, make sure the records from the `dns_records` outpu
 
 - The S3 bucket is private, encrypted (AES256 with bucket key), and blocks all public access.
 - The SNS topic is unencrypted by default (SES cannot use the AWS-managed SNS key); the Terraform module accepts a customer-managed key via `sns_kms_key_arn`. The topic policy restricts publishing to SES for this account and receipt rule.
-- The S3 bucket policy restricts writes to SES using `SourceAccount` and `SourceArn` conditions.
+- The S3 bucket policy restricts writes to SES using `SourceAccount` and `SourceArn` conditions. In both the Terraform module and the CDK construct SES may only call `s3:PutObject`, only under `raw/`, and requests that do not use TLS are denied (`aws:SecureTransport` is `false`; the Terraform module writes the deny statement itself, the CDK construct uses `enforceSSL`). ACLs are disabled (object ownership `BucketOwnerEnforced`), so access is controlled by policy alone.
+- The CDK construct has no KMS option: its SNS topic is always unencrypted.
+- Tags: the Terraform `tags` variable is applied to the S3 bucket and SNS topic only. The SES identity, receipt rule set and rule, and DNS records carry no tags. The CDK construct sets no tags of its own.
+- maildummy is test infrastructure for receiving disposable test mail. It accepts mail from any sender, does not scan it, keeps it in S3 readable by anyone with `s3:GetObject`, and provisions no monitoring or access logging. Do not use it for real or sensitive mail; see `SECURITY_REVIEW.md` for the residual risks.
 - Emails are automatically deleted after the configured retention period.
 - Use a dedicated subdomain (e.g. `maildummy.*`) that is isolated from production mail.
 
