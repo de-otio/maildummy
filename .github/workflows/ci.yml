@@ -34,3 +34,42 @@ jobs:
       - name: Test
         working-directory: cdk
         run: npx jest --coverage
+
+  terraform:
+    name: OpenTofu (${{ matrix.fixture }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # Fixture roots pinning hashicorp/aws ~> 5.0 and ~> 6.0.
+        fixture: [aws5, aws6]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.13.0
+          tofu_wrapper: false
+
+      - name: Format
+        run: tofu fmt -check -recursive terraform
+
+      - name: Init fixture
+        timeout-minutes: 5
+        run: tofu -chdir=terraform/test/fixtures/${{ matrix.fixture }} init -backend=false -input=false
+
+      - name: Validate fixture
+        run: tofu -chdir=terraform/test/fixtures/${{ matrix.fixture }} validate
+
+      - name: Test fixture (offline plan)
+        timeout-minutes: 5
+        run: tofu -chdir=terraform/test/fixtures/${{ matrix.fixture }} test
+
+      - name: Test ses_maildummy module (offline plan)
+        timeout-minutes: 5
+        run: |
+          tofu -chdir=terraform/modules/ses_maildummy init -backend=false -input=false
+          tofu -chdir=terraform/modules/ses_maildummy test

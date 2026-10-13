@@ -1,0 +1,12 @@
+Return-Path: <noreply@example.org>
+From: App <noreply@example.org>
+To: fragment@example.com
+Subject: Sign in
+Date: Tue, 13 Oct 2026 09:00:00 +0000
+Message-ID: <fixture@example.org>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Sign in: https://app.example.com/#/sign-in/link#otp=123456
+
+If that did not work, ignore this mail.

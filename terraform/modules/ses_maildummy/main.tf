@@ -2,12 +2,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-    cloudflare = {
-      source  = "cloudflare/cloudflare"
-      version = "= 5.12.0"
-      # Only required when using Cloudflare DNS
+      version = ">= 5.0, < 7.0"
     }
   }
 }
@@ -15,18 +10,6 @@ terraform {
 # SES Domain Identity for maildummy domain (supports DKIM)
 resource "aws_ses_domain_identity" "maildummy" {
   domain = var.maildummy_domain
-}
-
-# Domain verification TXT record for SES (Cloudflare)
-resource "cloudflare_dns_record" "maildummy_verification" {
-  count = var.dns_provider == "cloudflare" ? 1 : 0
-
-  zone_id = var.cloudflare_zone_id
-  name    = "_amazonses.${var.maildummy_subdomain}"
-  type    = "TXT"
-  content = aws_ses_domain_identity.maildummy.verification_token
-  ttl     = 300
-  comment = "SES domain verification record"
 }
 
 # Domain verification TXT record for SES (Route53)
@@ -40,19 +23,21 @@ resource "aws_route53_record" "maildummy_verification" {
   records = [aws_ses_domain_identity.maildummy.verification_token]
 }
 
-# Verify domain identity (waits for DNS propagation)
-# TEMPORARILY COMMENTED OUT - causing pipeline hangs
-# resource "aws_ses_domain_identity_verification" "maildummy" {
-#   domain = aws_ses_domain_identity.maildummy.id
-#
-#   timeouts {
-#     create = "5m"
-#   }
-#
-#   depends_on = [
-#     var.dns_provider == "cloudflare" ? cloudflare_dns_record.maildummy_verification[0] : aws_route53_record.maildummy_verification[0]
-#   ]
-# }
+# Optionally wait until SES reports the domain as verified. Off by default:
+# the apply blocks until DNS has propagated and SES has checked it, up to
+# verification_timeout. With dns_provider = "none" the records must already be
+# published elsewhere, or the wait times out.
+resource "aws_ses_domain_identity_verification" "maildummy" {
+  count = var.wait_for_verification ? 1 : 0
+
+  domain = aws_ses_domain_identity.maildummy.domain
+
+  timeouts {
+    create = var.verification_timeout
+  }
+
+  depends_on = [aws_route53_record.maildummy_verification]
+}
 
 # S3 bucket for storing incoming emails
 resource "aws_s3_bucket" "maildummy" {
@@ -119,24 +104,50 @@ resource "aws_s3_bucket_public_access_block" "maildummy" {
   restrict_public_buckets = true
 }
 
-# SNS topic for email notifications
+# SNS topic for email notifications.
+# Unencrypted unless sns_kms_key_arn is set. The AWS-managed key (alias/aws/sns)
+# cannot be used: its key policy does not let AWS services such as SES call
+# kms:GenerateDataKey / kms:Decrypt, and it cannot be edited. A customer-managed
+# key must grant ses.amazonaws.com those actions (see the
+# sns_kms_key_policy_statement output).
 resource "aws_sns_topic" "maildummy" {
   name = var.sns_topic_name
 
-  kms_master_key_id = "alias/aws/sns" # Use AWS managed key for encryption
+  kms_master_key_id = var.sns_kms_key_arn
 
   tags = var.tags
 }
 
-# SES Receipt Rule - stores emails in S3 and notifies SNS
-# Note: This rule is appended to an existing receipt rule set (provided via receipt_rule_set_name variable).
-# Only one active receipt rule set is allowed per region, so the module does not create or activate rule sets.
-# The rule will be appended to the end of the existing ruleset automatically.
-# Note: Using separate SNS action instead of topic_arn in s3_action to avoid
-# policy validation issues during initial creation
+# SES receipt rule set. By default the module adds its rule to an existing set
+# (receipt_rule_set_name). create_rule_set creates that set; activate_rule_set
+# makes it the active set. The active set is a per-region singleton: exactly one
+# configuration may own it, so only enable activate_rule_set if nothing else in
+# the account and region manages the active receipt rule set.
+resource "aws_ses_receipt_rule_set" "maildummy" {
+  count = var.create_rule_set ? 1 : 0
+
+  rule_set_name = var.receipt_rule_set_name
+}
+
+resource "aws_ses_active_receipt_rule_set" "maildummy" {
+  count = var.activate_rule_set ? 1 : 0
+
+  rule_set_name = var.receipt_rule_set_name
+
+  # Activate once the rule exists; on destroy, deactivate before removing it.
+  depends_on = [
+    aws_ses_receipt_rule_set.maildummy,
+    aws_ses_receipt_rule.maildummy,
+  ]
+}
+
+# SES Receipt Rule - stores emails in S3 and notifies SNS.
+# SES places the rule after the rule named in receipt_rule_after; when that is
+# null, SES inserts it at the beginning of the rule set.
 resource "aws_ses_receipt_rule" "maildummy" {
   name          = var.receipt_rule_name
-  rule_set_name = var.receipt_rule_set_name
+  rule_set_name = var.create_rule_set ? aws_ses_receipt_rule_set.maildummy[0].rule_set_name : var.receipt_rule_set_name
+  after         = var.receipt_rule_after
   recipients    = [var.maildummy_domain]
   enabled       = true
   scan_enabled  = false
@@ -148,9 +159,7 @@ resource "aws_ses_receipt_rule" "maildummy" {
     position          = 1
   }
 
-  # SNS action - notify when emails are received (optional to avoid policy validation issues)
-  # If receipt rule creation fails, set enable_sns_notifications = false, create the rule,
-  # then set it back to true and apply again
+  # SNS action - notify when emails are received
   dynamic "sns_action" {
     for_each = var.enable_sns_notifications ? [1] : []
     content {
@@ -179,7 +188,7 @@ resource "aws_s3_bucket_policy" "maildummy" {
         Principal = {
           Service = "ses.amazonaws.com"
         }
-        Action   = [
+        Action = [
           "s3:PutObject",
           "s3:PutObjectAcl"
         ]
@@ -189,7 +198,7 @@ resource "aws_s3_bucket_policy" "maildummy" {
             "AWS:SourceAccount" = data.aws_caller_identity.current.account_id
           }
           ArnLike = {
-            "AWS:SourceArn" = "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:receipt-rule-set/${var.receipt_rule_set_name}:receipt-rule/${var.receipt_rule_name}"
+            "AWS:SourceArn" = local.receipt_rule_arn
           }
         }
       }
@@ -197,10 +206,7 @@ resource "aws_s3_bucket_policy" "maildummy" {
   })
 }
 
-# IAM policy for SES to publish to SNS topic
-# Note: Policy is intentionally simple (no conditions) to avoid AWS SES validation issues
-# The policy allows SES service from any account in the same region to publish
-# In production, consider adding SourceAccount condition after initial deployment
+# Topic policy: only this account's receipt rule may publish via SES.
 resource "aws_sns_topic_policy" "maildummy" {
   arn = aws_sns_topic.maildummy.arn
 
@@ -208,30 +214,24 @@ resource "aws_sns_topic_policy" "maildummy" {
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "AllowSESPublish"
         Effect = "Allow"
         Principal = {
           Service = "ses.amazonaws.com"
         }
         Action   = "SNS:Publish"
         Resource = aws_sns_topic.maildummy.arn
-        # No conditions - AWS SES validation is very strict and can fail even with SourceAccount condition
-        # After successful deployment, you can manually add SourceAccount condition if needed for security
+        Condition = {
+          StringEquals = {
+            "AWS:SourceAccount" = data.aws_caller_identity.current.account_id
+          }
+          ArnLike = {
+            "AWS:SourceArn" = local.receipt_rule_arn
+          }
+        }
       }
     ]
   })
-}
-
-# MX record in Cloudflare for SES inbound email
-resource "cloudflare_dns_record" "maildummy_mx" {
-  count = var.dns_provider == "cloudflare" ? 1 : 0
-
-  zone_id  = var.cloudflare_zone_id
-  name     = var.maildummy_subdomain
-  type     = "MX"
-  priority = 10
-  content  = local.ses_inbound_endpoint
-  ttl      = 300
-  comment  = "MX record for SES inbound email to maildummy domain"
 }
 
 # MX record in Route53 for SES inbound email
@@ -245,51 +245,24 @@ resource "aws_route53_record" "maildummy_mx" {
   records = ["10 ${local.ses_inbound_endpoint}"]
 }
 
-# Enable DKIM signing for the domain (only after verification)
-# Note: Verification dependency temporarily removed - verification resource is commented out
+# Enable DKIM signing for the domain. SES returns the three tokens as soon as
+# this is created; the domain does not have to be verified first.
 resource "aws_ses_domain_dkim" "maildummy" {
   count  = var.enable_dkim ? 1 : 0
   domain = aws_ses_domain_identity.maildummy.domain
-
-  # depends_on = [aws_ses_domain_identity_verification.maildummy]  # Temporarily removed
 }
 
-# Local value to safely extract DKIM tokens
-locals {
-  dkim_tokens = var.enable_dkim && length(aws_ses_domain_dkim.maildummy) > 0 ? (
-    try(aws_ses_domain_dkim.maildummy[0].dkim_tokens, [])
-  ) : []
-}
-
-# Create DKIM CNAME records in Cloudflare
-# Note: DKIM tokens are generated asynchronously by AWS SES after domain verification.
-# These records require a two-stage apply:
-# 1. First apply: Creates domain identity and verification (DKIM tokens not yet available)
-# 2. Second apply: Creates DKIM records once tokens are available (set enable_dkim=true)
-resource "cloudflare_dns_record" "maildummy_dkim" {
-  for_each = var.dns_provider == "cloudflare" && length(local.dkim_tokens) > 0 ? {
-    for token in local.dkim_tokens : token => token
-  } : {}
-
-  zone_id = var.cloudflare_zone_id
-  name    = "${each.value}._domainkey.${var.maildummy_subdomain}"
-  type    = "CNAME"
-  content = "${each.value}.dkim.amazonses.com"
-  ttl     = 300
-  comment = "DKIM record for SES email identity"
-}
-
-# Create DKIM CNAME records in Route53
+# Create DKIM CNAME records in Route53. SES always issues three tokens; the
+# count is static so the records plan even while the tokens are unknown (the
+# identity's first apply).
 resource "aws_route53_record" "maildummy_dkim" {
-  for_each = var.dns_provider == "route53" && length(local.dkim_tokens) > 0 ? {
-    for token in local.dkim_tokens : token => token
-  } : {}
+  count = var.dns_provider == "route53" && var.enable_dkim ? 3 : 0
 
   zone_id = var.route53_zone_id
-  name    = "${each.value}._domainkey.${var.maildummy_subdomain}"
+  name    = "${aws_ses_domain_dkim.maildummy[0].dkim_tokens[count.index]}._domainkey.${var.maildummy_subdomain}"
   type    = "CNAME"
   ttl     = 300
-  records = ["${each.value}.dkim.amazonses.com"]
+  records = ["${aws_ses_domain_dkim.maildummy[0].dkim_tokens[count.index]}.dkim.amazonses.com"]
 }
 
 # Note: The _amazonses TXT record is used for domain verification.
@@ -302,4 +275,7 @@ data "aws_caller_identity" "current" {}
 # Build SES inbound endpoint dynamically from region
 locals {
   ses_inbound_endpoint = "inbound-smtp.${var.aws_region}.amazonaws.com"
+
+  # ARN of the receipt rule, used as AWS:SourceArn in the S3 and SNS policies.
+  receipt_rule_arn = "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:receipt-rule-set/${var.receipt_rule_set_name}:receipt-rule/${var.receipt_rule_name}"
 }

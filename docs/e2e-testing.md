@@ -31,43 +31,74 @@ await fetch(`${API_URL}/auth/send-magic-link`, {
 
 ## 3. Retrieve the magic link
 
-### Using the helper script directly
+### Using the Node.js helper
+
+Install the package, pinned to a release tag:
+
+```bash
+npm install --save-dev "github:de-otio/maildummy#<tag>"
+```
+
+`waitForLink` does the polling for you. Take `since` just before you trigger the email so that mail from earlier runs is ignored:
 
 ```ts
-import { execSync } from "child_process";
+const { waitForLink, linkPattern } = require("@de-otio/maildummy");
 
-const link = execSync(
-  `node scripts/get-magic-link-from-s3.js my-maildummy-bucket ${testEmail} --region eu-central-1`,
+const since = new Date();
+// ... trigger the email ...
+const link = await waitForLink("my-maildummy-bucket", testEmail, {
+  pattern: linkPattern("https://app.example.com/"),
+  since,
+  timeout: 60_000, // milliseconds
+});
+// a MailTimeout is thrown if no mail arrives in time
+```
+
+Or run the command line tool, which prints the link:
+
+```ts
+import { execFileSync } from "child_process";
+
+const link = execFileSync(
+  "npx",
+  ["maildummy-link", "my-maildummy-bucket", testEmail, "--url-prefix", "https://app.example.com/", "--timeout", "60"],
   { encoding: "utf-8" }
 ).trim();
 ```
 
-### Using the module export
+### From Python (pytest)
 
-```ts
-const { getMagicLinkFromS3 } = require("@de-otio/maildummy/scripts/get-magic-link-from-s3");
+Install the `maildummy` package, pinned to a release tag:
 
-const link = await getMagicLinkFromS3("my-maildummy-bucket", testEmail, "eu-central-1");
+```bash
+pip install "maildummy @ git+https://github.com/de-otio/maildummy@<tag>#subdirectory=python"
 ```
 
-### Polling
+`wait_for_link` does the polling for you. Take `since` just before you trigger the email so that mail from earlier runs is ignored:
 
-Emails typically arrive within a few seconds, but delivery is not instant. Wrap the retrieval in a retry loop:
+```python
+from datetime import datetime, timezone
 
-```ts
-async function waitForMagicLink(bucket: string, email: string, region: string, timeoutMs = 30000) {
-  const { getMagicLinkFromS3 } = require("@de-otio/maildummy/scripts/get-magic-link-from-s3");
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      return await getMagicLinkFromS3(bucket, email, region);
-    } catch {
-      await new Promise((r) => setTimeout(r, 2000));
-    }
-  }
-  throw new Error(`Magic link for ${email} not found within ${timeoutMs}ms`);
-}
+from maildummy import link_pattern, wait_for_link
+
+
+def test_sign_in(api_client):
+    test_email = "test-123@maildummy.example.com"
+    started = datetime.now(timezone.utc)
+
+    api_client.post("/auth/send-magic-link", json={"email": test_email})
+
+    link = wait_for_link(
+        "my-maildummy-bucket",
+        test_email,
+        pattern=link_pattern("https://app.example.com/"),
+        since=started,
+        timeout=60,
+    )
+    # a MailTimeout (a TimeoutError) is raised if no mail arrives in time
 ```
+
+See [Helper scripts](helper-scripts.md) for the full reference.
 
 ## 4. Complete authentication
 

@@ -1,0 +1,18 @@
+Return-Path: <noreply@example.org>
+From: App <noreply@example.org>
+To: fallback@example.com
+Subject: Sign in
+Date: Tue, 13 Oct 2026 09:00:00 +0000
+Message-ID: <fixture@example.org>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="BOUNDARY"
+
+--BOUNDARY
+Content-Type: text/plain; charset=utf-8
+
+Open this message in an HTML-capable mail client.
+--BOUNDARY
+Content-Type: text/html; charset=utf-8
+
+<p><a href="https://app.example.com/only-in-html?a=1&amp;b=2">Sign in</a></p>
+--BOUNDARY--

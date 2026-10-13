@@ -1,0 +1,13 @@
+Return-Path: <noreply@example.org>
+From: App <noreply@example.org>
+To: qp@example.com
+Subject: Sign in
+Date: Tue, 13 Oct 2026 09:00:00 +0000
+Message-ID: <fixture@example.org>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Sign in: https://app.example.com/auth/verify?token=3Dqp12345678901234567890=
+1234567890&type=3Dmagiclink&redirect_to=3Dhttps%3A%2F%2Fapp.example.com%2Fh=
+ome

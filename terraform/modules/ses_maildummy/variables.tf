@@ -4,25 +4,19 @@ variable "maildummy_domain" {
 }
 
 variable "maildummy_subdomain" {
-  description = "Maildummy subdomain without zone (e.g., maildummy for maildummy.example.com)"
+  description = "Maildummy subdomain without zone (e.g., maildummy for maildummy.example.com). Used for the Route53 record names."
   type        = string
 }
 
 variable "dns_provider" {
-  description = "DNS provider to use for DNS record creation. Must be either 'cloudflare' or 'route53'"
+  description = "Where the module publishes DNS records: 'route53' (records created in route53_zone_id) or 'none' (publish the values from the dns_records output yourself, e.g. with the ses_maildummy_cloudflare module)"
   type        = string
-  default     = "cloudflare"
+  default     = "none"
 
   validation {
-    condition     = contains(["cloudflare", "route53"], var.dns_provider)
-    error_message = "dns_provider must be either 'cloudflare' or 'route53'"
+    condition     = contains(["route53", "none"], var.dns_provider)
+    error_message = "dns_provider must be 'route53' or 'none'. For Cloudflare, set dns_provider = \"none\" and pass the dns_records output to the ses_maildummy_cloudflare module."
   }
-}
-
-variable "cloudflare_zone_id" {
-  description = "Cloudflare Zone ID for DNS record creation (required when dns_provider = 'cloudflare')"
-  type        = string
-  default     = null
 }
 
 variable "route53_zone_id" {
@@ -48,13 +42,31 @@ variable "sns_topic_name" {
 }
 
 variable "receipt_rule_set_name" {
-  description = "Name of an existing SES receipt rule set to append the rule to. Only one active receipt rule set is allowed per region, so this must reference an existing ruleset."
+  description = "Name of the SES receipt rule set that holds the rule. Must already exist unless create_rule_set = true."
   type        = string
 }
 
+variable "create_rule_set" {
+  description = "Create the receipt rule set named receipt_rule_set_name. Leave false to add the rule to an existing set."
+  type        = bool
+  default     = false
+}
+
+variable "activate_rule_set" {
+  description = "Make receipt_rule_set_name the active receipt rule set. The active set is a per-region singleton: enable this only if no other configuration manages it. Destroying the module then disables email receiving in the region."
+  type        = bool
+  default     = false
+}
+
 variable "receipt_rule_name" {
-  description = "Name of the SES receipt rule to create and append to the existing ruleset"
+  description = "Name of the SES receipt rule to create"
   type        = string
+}
+
+variable "receipt_rule_after" {
+  description = "Name of an existing rule in the set to place this rule after. When null, SES inserts the rule at the beginning of the rule set."
+  type        = string
+  default     = null
 }
 
 variable "email_retention_days" {
@@ -75,14 +87,42 @@ variable "tags" {
 }
 
 variable "enable_dkim" {
-  description = "Enable DKIM records creation (set to false for initial deployment, enable after domain verification)"
+  description = "Enable Easy DKIM for the domain and publish its three CNAME records. Works on the first apply; the domain need not be verified first."
   type        = bool
   default     = false
 }
 
+variable "wait_for_verification" {
+  description = "Block the apply until SES reports the domain identity as verified (aws_ses_domain_identity_verification)"
+  type        = bool
+  default     = false
+}
+
+variable "verification_timeout" {
+  description = "How long wait_for_verification waits before failing, as a duration such as \"15m\""
+  type        = string
+  default     = "15m"
+
+  validation {
+    condition     = can(regex("^[0-9]+(s|m|h)$", var.verification_timeout))
+    error_message = "verification_timeout must be a duration such as \"90s\", \"15m\" or \"1h\"."
+  }
+}
+
 variable "enable_sns_notifications" {
-  description = "Enable SNS notifications for received emails (set to false initially if receipt rule creation fails, then enable after policies propagate)"
+  description = "Add an SNS action to the receipt rule that publishes each received email to the topic"
   type        = bool
   default     = true
+}
+
+variable "sns_kms_key_arn" {
+  description = "ARN of a customer-managed KMS key for SNS topic encryption. null (default) leaves the topic unencrypted. The key policy must allow ses.amazonaws.com kms:GenerateDataKey* and kms:Decrypt (see the sns_kms_key_policy_statement output). The AWS-managed alias/aws/sns key does not work with SES."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.sns_kms_key_arn == null || !can(regex("alias/aws/", var.sns_kms_key_arn))
+    error_message = "AWS-managed keys (alias/aws/...) cannot be used: SES cannot publish to topics encrypted with them. Use a customer-managed key."
+  }
 }
 

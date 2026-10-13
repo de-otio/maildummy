@@ -309,6 +309,77 @@ describe("Maildummy", () => {
     });
   });
 
+  // ── Receipt Rule Set ─────────────────────────────────────────────
+
+  describe("receipt rule set", () => {
+    it("neither creates nor activates a rule set by default", () => {
+      const { template } = createStack();
+      template.resourceCountIs("AWS::SES::ReceiptRuleSet", 0);
+      template.resourceCountIs("Custom::AWS", 0);
+      template.hasResourceProperties("AWS::SES::ReceiptRule", {
+        RuleSetName: "my-rule-set",
+        After: Match.absent(),
+      });
+    });
+
+    it("creates the rule set and puts the rule in it when createRuleSet is true", () => {
+      const { template } = createStack({ ...defaultProps, createRuleSet: true });
+      template.hasResourceProperties("AWS::SES::ReceiptRuleSet", {
+        RuleSetName: "my-rule-set",
+      });
+      const ruleSets = template.findResources("AWS::SES::ReceiptRuleSet");
+      const ruleSetId = Object.keys(ruleSets)[0];
+      template.hasResourceProperties("AWS::SES::ReceiptRule", {
+        RuleSetName: { Ref: ruleSetId },
+      });
+    });
+
+    it("activates the rule set with SetActiveReceiptRuleSet when activateRuleSet is true", () => {
+      const { template } = createStack({
+        ...defaultProps,
+        createRuleSet: true,
+        activateRuleSet: true,
+      });
+      const activations = template.findResources("Custom::AWS");
+      const ids = Object.keys(activations);
+      expect(ids).toHaveLength(1);
+      const activation = activations[ids[0]];
+      const create = JSON.stringify(activation.Properties.Create);
+      expect(create).toContain("SetActiveReceiptRuleSet");
+      expect(create).toContain("my-rule-set");
+      const del = JSON.stringify(activation.Properties.Delete);
+      expect(del).toContain("SetActiveReceiptRuleSet");
+      expect(del).not.toContain("my-rule-set");
+      // Activation waits for the rule (and so, on delete, runs before it).
+      const rules = template.findResources("AWS::SES::ReceiptRule");
+      expect(activation.DependsOn).toEqual(
+        expect.arrayContaining([Object.keys(rules)[0]])
+      );
+    });
+
+    it("grants the activation function ses:SetActiveReceiptRuleSet", () => {
+      const { template } = createStack({ ...defaultProps, activateRuleSet: true });
+      template.hasResourceProperties("AWS::IAM::Policy", {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({ Action: "ses:SetActiveReceiptRuleSet" }),
+          ]),
+        },
+      });
+      template.resourceCountIs("AWS::SES::ReceiptRuleSet", 0);
+    });
+
+    it("passes receiptRuleAfter to the rule", () => {
+      const { template } = createStack({
+        ...defaultProps,
+        receiptRuleAfter: "existing-rule",
+      });
+      template.hasResourceProperties("AWS::SES::ReceiptRule", {
+        After: "existing-rule",
+      });
+    });
+  });
+
   // ── DNS Records ──────────────────────────────────────────────────
 
   describe("DNS records", () => {
