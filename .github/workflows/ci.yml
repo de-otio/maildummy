@@ -148,3 +148,36 @@ jobs:
         run: |
           tofu -chdir=terraform/modules/ses_maildummy init -backend=false -input=false
           tofu -chdir=terraform/modules/ses_maildummy test
+
+  # The single required status check for main. Branch protection names this
+  # job instead of each matrix leg, so renaming or extending a matrix cannot
+  # leave a PR waiting for a check that never reports.
+  ci-required:
+    name: ci-required
+    if: always()
+    needs: [test, js, python, terraform]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify every CI job succeeded or was skipped
+        env:
+          RESULTS: >-
+            test=${{ needs.test.result }}
+            js=${{ needs.js.result }}
+            python=${{ needs.python.result }}
+            terraform=${{ needs.terraform.result }}
+        run: |
+          set -euo pipefail
+          failed=0
+          for pair in $RESULTS; do
+            job="${pair%%=*}"
+            result="${pair#*=}"
+            case "$result" in
+              success|skipped) echo "ok       $job: $result" ;;
+              *) echo "FAILED   $job: ${result:-<no result>}"; failed=1 ;;
+            esac
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo "ci-required: at least one CI job did not succeed."
+            exit 1
+          fi
