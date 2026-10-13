@@ -8,7 +8,7 @@ The simplest and most maintainable approach is to use Terraform's built-in git s
 
 ```hcl
 module "ses_maildummy" {
-  source = "git::https://github.com/your-org/maildummy.git//terraform/modules/ses_maildummy?ref=main"
+  source = "git::https://github.com/de-otio/maildummy.git//terraform/modules/ses_maildummy?ref=main"
 
   # ... rest of configuration
 }
@@ -35,7 +35,7 @@ module "ses_maildummy" {
 2. **Push to remote**:
 
    ```bash
-   git remote add origin https://github.com/your-org/maildummy.git
+   git remote add origin https://github.com/de-otio/maildummy.git
    git push -u origin main
    ```
 
@@ -43,7 +43,7 @@ module "ses_maildummy" {
 
    ```hcl
    module "ses_maildummy" {
-     source = "git::https://github.com/your-org/maildummy.git//terraform/modules/ses_maildummy?ref=main"
+     source = "git::https://github.com/de-otio/maildummy.git//terraform/modules/ses_maildummy?ref=main"
      # ... rest of configuration
    }
    ```
@@ -58,7 +58,7 @@ module "ses_maildummy" {
    Then reference specific versions:
 
    ```hcl
-   source = "git::https://github.com/your-org/maildummy.git//terraform/modules/ses_maildummy?ref=v1.0.0"
+   source = "git::https://github.com/de-otio/maildummy.git//terraform/modules/ses_maildummy?ref=v1.0.0"
    ```
 
 ## Option 2: Terragrunt (Advanced)

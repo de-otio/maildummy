@@ -31,9 +31,9 @@ git commit -m "Initial commit: Maildummy infrastructure module"
 ### Option A: GitHub
 
 ```bash
-# Create a new repository on GitHub (e.g., github.com/your-org/maildummy)
+# Create a new repository on GitHub (e.g., github.com/de-otio/maildummy)
 # Then add the remote:
-git remote add origin https://github.com/your-org/maildummy.git
+git remote add origin https://github.com/de-otio/maildummy.git
 git branch -M main
 git push -u origin main
 ```
@@ -43,7 +43,7 @@ git push -u origin main
 ```bash
 # Create a new repository on GitLab
 # Then add the remote:
-git remote add origin https://gitlab.com/your-org/maildummy.git
+git remote add origin https://gitlab.com/<your-group>/maildummy.git
 git branch -M main
 git push -u origin main
 ```
@@ -63,13 +63,13 @@ Once the repository is pushed, update `environments/dev/terraform/main.tf`:
 
 ```hcl
 module "ses_maildummy" {
-  source = "git::https://github.com/your-org/maildummy.git//terraform/modules/ses_maildummy?ref=main"
+  source = "git::https://github.com/de-otio/maildummy.git//terraform/modules/ses_maildummy?ref=main"
 
   # ... rest of configuration
 }
 ```
 
-Replace `your-org` and the URL with your actual repository details.
+If you host your own copy of the repository, replace the URL with your own.
 
 ## Step 5: Use Version Tags (Recommended)
 
@@ -86,7 +86,7 @@ git push origin v1.0.0
 Then reference specific versions in Terraform:
 
 ```hcl
-source = "git::https://github.com/your-org/maildummy.git//terraform/modules/ses_maildummy?ref=v1.0.0"
+source = "git::https://github.com/de-otio/maildummy.git//terraform/modules/ses_maildummy?ref=v1.0.0"
 ```
 
 ## Benefits
@@ -111,7 +111,7 @@ source = "git::https://github.com/your-org/maildummy.git//terraform/modules/ses_
 If using a private repository, you may need to configure git credentials or use SSH:
 
 ```hcl
-source = "git::git@github.com:your-org/maildummy.git//terraform/modules/ses_maildummy?ref=main"
+source = "git::git@github.com:de-otio/maildummy.git//terraform/modules/ses_maildummy?ref=main"
 ```
 
 Or use Terraform's built-in credential helpers for HTTPS.

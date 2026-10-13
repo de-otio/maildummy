@@ -8,7 +8,7 @@ Module path: `terraform/modules/ses_maildummy`
 
 ```hcl
 module "maildummy" {
-  source = "github.com/your-org/maildummy//terraform/modules/ses_maildummy"
+  source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy"
 
   maildummy_domain      = "maildummy.example.com"
   dns_provider          = "route53"
@@ -28,7 +28,7 @@ module, `terraform/modules/ses_maildummy_cloudflare`, which takes the core modul
 
 ```hcl
 module "maildummy" {
-  source = "github.com/your-org/maildummy//terraform/modules/ses_maildummy"
+  source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy"
 
   maildummy_domain      = "maildummy.example.com"
   dns_provider          = "none"
@@ -39,7 +39,7 @@ module "maildummy" {
 }
 
 module "maildummy_cloudflare" {
-  source = "github.com/your-org/maildummy//terraform/modules/ses_maildummy_cloudflare"
+  source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy_cloudflare"
 
   zone_id     = "your-zone-id"
   dns_records = module.maildummy.dns_records

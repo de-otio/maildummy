@@ -31,7 +31,7 @@ Both create the same set of resources: SES domain identity, S3 bucket, SNS topic
 
 ```hcl
 module "maildummy" {
-  source = "github.com/your-org/maildummy//terraform/modules/ses_maildummy"
+  source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy"
 
   maildummy_domain      = "maildummy.example.com"
   dns_provider          = "route53"
