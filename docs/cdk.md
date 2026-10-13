@@ -114,3 +114,44 @@ The construct creates the same resources as the Terraform module:
   conditioned on `AWS:SourceAccount` and the receipt rule's `AWS:SourceArn`), SES → SNS
   (`Publish`, with the same two conditions)
 - Route53 records (MX and the three DKIM CNAMEs) when `hostedZone` is provided
+
+## Upgrading from 1.x to 2.0
+
+Run `cdk diff` before you deploy; every change below shows up there.
+
+**Route53 users: the DKIM CNAMEs are now always created.** In 1.x they were
+created only with `enableDkim: true`, and that defaulted to `false`, so the domain
+identity stayed unverified unless you added the records yourself. 2.0 creates the
+three `<token>._domainkey.<domain>` CNAMEs whenever `hostedZone` is set. If you
+created them by hand, the deploy fails because the records already exist. Delete
+the hand-made records just before deploying, so the gap before the stack
+recreates them is short. (Leaving out `hostedZone` instead would also remove the
+MX record the stack manages.)
+
+**`enableDkim` now defaults to `true`, and `false` turns signing off.** The
+identity now sets `DkimAttributes.SigningEnabled` from `enableDkim`. In 1.x, `false`
+only left out the 2048-bit key length and the Route53 CNAMEs; it did not set
+`SigningEnabled`. Set `enableDkim: false` explicitly only if you do not want SES to
+DKIM-sign mail sent from the domain.
+
+**`dkimTokens` always has three entries.** In 1.x it was empty when DKIM was
+disabled. It holds the CNAME names; the new `dkimRecords` property holds the
+name/value pairs.
+
+**S3 bucket: ACLs are disabled.** Object ownership becomes `BucketOwnerEnforced`,
+an in-place update. Anything that reads the bucket by relying on object ACLs
+stops working; SES delivery and the helpers do not use ACLs.
+
+**Policies are scoped to this construct's receipt rule.** The bucket policy's
+`AWS:SourceArn` changes from any rule in `receiptRuleSetName` to this construct's
+rule only, and the SNS topic policy gains the same condition (1.x had only
+`AWS:SourceAccount` there). If another receipt rule in the set writes to this
+bucket or publishes to this topic, SES is now denied.
+
+**Six new stack outputs:** `DkimRecordName1..3` and `DkimRecordValue1..3`, under the
+construct's path. They count towards CloudFormation's limit of 200 outputs per
+stack.
+
+New, opt-in props: `createRuleSet`, `activateRuleSet` and `receiptRuleAfter` (see
+[Receipt rule set](#receipt-rule-set)). The defaults keep 1.x behaviour: the rule
+is added to an existing set, which the construct does not activate.

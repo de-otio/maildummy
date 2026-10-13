@@ -1,6 +1,6 @@
 {
   "name": "@de-otio/maildummy-cdk",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "description": "AWS CDK construct for SES email testing infrastructure (maildummy)",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
