@@ -83,10 +83,11 @@ describe("Maildummy", () => {
       });
     });
 
-    it("does not set DKIM attributes by default", () => {
+    it("uses Easy DKIM with signing enabled by default", () => {
       const { template } = createStack();
       template.hasResourceProperties("AWS::SES::EmailIdentity", {
-        DkimSigningAttributes: Match.absent(),
+        DkimAttributes: { SigningEnabled: true },
+        DkimSigningAttributes: { NextSigningKeyLength: "RSA_2048_BIT" },
       });
     });
 
@@ -96,10 +97,69 @@ describe("Maildummy", () => {
         enableDkim: true,
       });
       template.hasResourceProperties("AWS::SES::EmailIdentity", {
+        DkimAttributes: { SigningEnabled: true },
         DkimSigningAttributes: {
           NextSigningKeyLength: "RSA_2048_BIT",
         },
       });
+    });
+
+    it("disables DKIM signing, not verification, when enableDkim is false", () => {
+      const { template } = createStack({
+        ...defaultProps,
+        enableDkim: false,
+      });
+      template.hasResourceProperties("AWS::SES::EmailIdentity", {
+        DkimAttributes: { SigningEnabled: false },
+        DkimSigningAttributes: Match.absent(),
+      });
+    });
+
+    it("never uses BYODKIM (no selector or private key)", () => {
+      const { template } = createStack();
+      const identities = template.findResources("AWS::SES::EmailIdentity");
+      const props = Object.values(identities)[0].Properties;
+      expect(JSON.stringify(props)).not.toMatch(/PrivateKey|DomainSigningSelector/);
+    });
+  });
+
+  // ── DKIM records and outputs ─────────────────────────────────────
+
+  describe("DKIM records and outputs", () => {
+    it.each([true, false, undefined])(
+      "outputs three CNAME name/value pairs when enableDkim is %s",
+      (enableDkim) => {
+        const { template } = createStack({ ...defaultProps, enableDkim });
+        const outputs = template.findOutputs("*");
+        for (const i of [1, 2, 3]) {
+          const name = Object.entries(outputs).find(([k]) =>
+            k.startsWith(`TestDkimRecordName${i}`)
+          )?.[1];
+          const value = Object.entries(outputs).find(([k]) =>
+            k.startsWith(`TestDkimRecordValue${i}`)
+          )?.[1];
+          expect(name).toBeDefined();
+          expect(value).toBeDefined();
+          expect(JSON.stringify(name?.Value)).toContain(`DkimDNSTokenName${i}`);
+          expect(JSON.stringify(value?.Value)).toContain(`DkimDNSTokenValue${i}`);
+        }
+        expect(Object.keys(outputs)).toHaveLength(6);
+      }
+    );
+
+    it("exposes dkimRecords as three name/value pairs, always", () => {
+      for (const enableDkim of [undefined, true, false]) {
+        const { construct, stack } = createStack({ ...defaultProps, enableDkim });
+        expect(construct.dkimRecords).toHaveLength(3);
+        construct.dkimRecords.forEach((record, index) => {
+          expect(JSON.stringify(stack.resolve(record.name))).toContain(
+            `DkimDNSTokenName${index + 1}`
+          );
+          expect(JSON.stringify(stack.resolve(record.value))).toContain(
+            `DkimDNSTokenValue${index + 1}`
+          );
+        });
+      }
     });
   });
 
@@ -415,17 +475,18 @@ describe("Maildummy", () => {
       });
     });
 
-    it("does not create DKIM records when DKIM is disabled", () => {
-      const { template } = createStackWithHostedZone();
-      // Should only have the MX record
-      template.resourceCountIs("AWS::Route53::RecordSet", 1);
-    });
-
-    it("creates 3 DKIM CNAME records when DKIM is enabled", () => {
-      const { template } = createStackWithHostedZone({ enableDkim: true });
-      // 1 MX + 3 DKIM CNAMEs
-      template.resourceCountIs("AWS::Route53::RecordSet", 4);
-    });
+    it.each([undefined, true, false])(
+      "creates 3 DKIM CNAME records by default and when enableDkim is %s",
+      (enableDkim) => {
+        const { template } = createStackWithHostedZone({ enableDkim });
+        // 1 MX + 3 DKIM CNAMEs: the CNAMEs verify the domain, signing or not
+        template.resourceCountIs("AWS::Route53::RecordSet", 4);
+        const cnames = template.findResources("AWS::Route53::RecordSet", {
+          Properties: { Type: "CNAME" },
+        });
+        expect(Object.keys(cnames)).toHaveLength(3);
+      }
+    );
   });
 
   // ── Removal Policy ───────────────────────────────────────────────
@@ -460,13 +521,13 @@ describe("Maildummy", () => {
       expect(construct.domainIdentity).toBeDefined();
     });
 
-    it("dkimTokens is empty when DKIM is disabled", () => {
+    it("dkimTokens has 3 entries by default", () => {
       const { construct } = createStack();
-      expect(construct.dkimTokens).toEqual([]);
+      expect(construct.dkimTokens).toHaveLength(3);
     });
 
-    it("dkimTokens has 3 entries when DKIM is enabled", () => {
-      const { construct } = createStack({ ...defaultProps, enableDkim: true });
+    it("dkimTokens has 3 entries when DKIM signing is disabled", () => {
+      const { construct } = createStack({ ...defaultProps, enableDkim: false });
       expect(construct.dkimTokens).toHaveLength(3);
     });
   });
