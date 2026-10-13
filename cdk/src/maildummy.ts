@@ -258,6 +258,9 @@ export class Maildummy extends Construct {
           StringEquals: {
             "AWS:SourceAccount": account,
           },
+          ArnLike: {
+            "AWS:SourceArn": receiptRuleArn,
+          },
         },
       })
     );
