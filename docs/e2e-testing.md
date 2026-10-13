@@ -102,10 +102,26 @@ See [Helper scripts](helper-scripts.md) for the full reference.
 
 ## 4. Complete authentication
 
+Read the parameters from the link. Some apps put them in the query string (`https://app.example.com/auth/callback?token=...`), others in the URL fragment, which `url.searchParams` does not see: `https://app.example.com/callback#token=...`, or with a hash router `https://app.example.com/#/sign-in/link#otp=123456` (a second `#`) or `https://app.example.com/#/sign-in?otp=123456`. This helper reads all of them; a query-string value wins if the same name appears in both:
+
 ```ts
-const url = new URL(link);
-const token = url.searchParams.get("token");
-const type = url.searchParams.get("type");
+function linkParams(link: string): URLSearchParams {
+  const url = new URL(link);
+  const params = new URLSearchParams(url.search);
+  const fragment = url.hash.slice(1);
+  // Parameters follow the first "?" or "#" inside the fragment (hash router),
+  // or make up the whole fragment when it has no path ("#token=...").
+  const sep = fragment.search(/[?#]/);
+  const fragmentParams = sep >= 0 ? fragment.slice(sep + 1) : fragment.includes("=") ? fragment : "";
+  for (const [key, value] of new URLSearchParams(fragmentParams)) {
+    if (!params.has(key)) params.set(key, value);
+  }
+  return params;
+}
+
+const params = linkParams(link);
+const token = params.get("token");
+const type = params.get("type");
 
 await fetch(`${API_URL}/auth/callback`, {
   method: "POST",
