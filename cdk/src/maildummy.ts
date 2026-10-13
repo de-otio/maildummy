@@ -114,7 +114,7 @@ export interface DkimRecord {
  * Mirrors the functionality of the Terraform `ses_maildummy` module:
  * - SES domain identity (SESv2), verified via Easy DKIM CNAME records
  * - S3 bucket for storing incoming emails (encrypted, lifecycle-managed)
- * - SNS topic for email notifications (encrypted)
+ * - SNS topic for email notifications (not KMS-encrypted; see the topic below)
  * - SES receipt rule routing emails to S3 (and optionally SNS)
  * - Route53 DNS records (MX + DKIM CNAMEs) when a hosted zone is provided
  *
