@@ -55,7 +55,7 @@ Set `dns_provider = "none"` and publish the records in the `dns_records` output
 
 ## Prerequisites
 
-- Terraform >= 1.2 or OpenTofu
+- Terraform >= 1.7 or OpenTofu >= 1.7 (the module uses a `removed` block)
 - AWS provider >= 5.0, < 7.0 (both 5.x and 6.x are tested)
 - Cloudflare provider >= 5.12.0, < 6.0.0, only if you use the `ses_maildummy_cloudflare` module
 - An SES receipt rule set, active in the region (see [Receipt rule set](#receipt-rule-set))
@@ -87,7 +87,7 @@ that rule instead.
 | Resource | Purpose |
 |----------|---------|
 | `aws_ses_domain_identity` | Verifies the maildummy domain with SES |
-| `aws_s3_bucket` + policies | Stores emails under `raw/`, encrypted (AES256), lifecycle-managed |
+| `aws_s3_bucket` + policies | Stores emails under `raw/`, encrypted (AES256), lifecycle-managed. ACLs disabled (`BucketOwnerEnforced`); the policy lets SES `s3:PutObject` under `raw/*` only and denies requests that do not use TLS |
 | `aws_sns_topic` + policy | Optional email-arrival notifications (unencrypted unless `sns_kms_key_arn` is set); policy limited to this account's receipt rule |
 | `aws_ses_receipt_rule` | Routes inbound mail to S3 (and optionally SNS) |
 | `aws_ses_receipt_rule_set` | Only when `create_rule_set = true` |
@@ -157,6 +157,19 @@ deprecated and ignored: remove it. If you keep it, it must equal the provider's
 region or the plan fails with a precondition error. If you relied on the old default
 (`eu-central-1`) with a provider in another region, the policies and the MX record
 were wrong; the next plan corrects them in place.
+
+**S3 bucket:** object ownership changes from `BucketOwnerPreferred` to
+`BucketOwnerEnforced`, which disables ACLs, and the module no longer manages
+`aws_s3_bucket_acl`. The bucket policy drops `s3:PutObjectAcl`, limits the SES grant
+to `<bucket>/raw/*` (the prefix the receipt rule writes to) and gains a Deny for all
+principals when `aws:SecureTransport` is `false`. The plan shows in-place updates of
+the ownership controls and the bucket policy, and the ACL resource as "will no
+longer be managed, but will not be destroyed". Nothing is deleted in AWS: the
+provider's delete for `aws_s3_bucket_acl` makes no API call, and `BucketOwnerEnforced`
+makes S3 ignore ACLs anyway. The `removed` block (needs Terraform or OpenTofu >= 1.7)
+only makes the plan say so. If you read objects in the bucket with
+anything that relies on ACLs, or a client that talks plain HTTP, it breaks; the
+module itself and SES delivery do not.
 
 **Route53 users:** `dns_provider` no longer defaults to `"cloudflare"`, so keep
 `dns_provider = "route53"` set explicitly. If `enable_dkim = true`, the DKIM

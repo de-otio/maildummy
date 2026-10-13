@@ -1,4 +1,6 @@
 terraform {
+  required_version = ">= 1.7"
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -60,20 +62,26 @@ resource "aws_s3_bucket" "maildummy" {
   }
 }
 
-# Allow SES to set ACLs on delivered objects.
+# ACLs are disabled: the bucket owner owns every object, and access is granted
+# only through the bucket policy. SES delivery needs just s3:PutObject (see
+# "Give SES permission to write to an S3 bucket" in the SES developer guide).
 resource "aws_s3_bucket_ownership_controls" "maildummy" {
   bucket = aws_s3_bucket.maildummy.id
 
   rule {
-    object_ownership = "BucketOwnerPreferred"
+    object_ownership = "BucketOwnerEnforced"
   }
 }
 
-resource "aws_s3_bucket_acl" "maildummy" {
-  bucket = aws_s3_bucket.maildummy.id
-  acl    = "private"
+# 1.x managed the bucket ACL. Destroying aws_s3_bucket_acl only drops it from
+# state (the provider's delete is a no-op), so this block just makes the plan say
+# so instead of "destroy". Requires Terraform or OpenTofu >= 1.7.
+removed {
+  from = aws_s3_bucket_acl.maildummy
 
-  depends_on = [aws_s3_bucket_ownership_controls.maildummy]
+  lifecycle {
+    destroy = false
+  }
 }
 
 # Enable server-side encryption for S3 bucket
@@ -96,7 +104,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "maildummy" {
     status = "Enabled"
 
     filter {
-      prefix = "raw/"
+      prefix = local.raw_prefix
     }
 
     expiration {
@@ -165,7 +173,7 @@ resource "aws_ses_receipt_rule" "maildummy" {
   # S3 action - store emails in S3
   s3_action {
     bucket_name       = aws_s3_bucket.maildummy.id
-    object_key_prefix = "raw/"
+    object_key_prefix = local.raw_prefix
     position          = 1
   }
 
@@ -185,7 +193,8 @@ resource "aws_ses_receipt_rule" "maildummy" {
   ]
 }
 
-# IAM policy for SES to write to S3 bucket
+# Bucket policy: SES may write under the raw prefix only, and every request must
+# use TLS.
 resource "aws_s3_bucket_policy" "maildummy" {
   bucket = aws_s3_bucket.maildummy.id
 
@@ -198,17 +207,29 @@ resource "aws_s3_bucket_policy" "maildummy" {
         Principal = {
           Service = "ses.amazonaws.com"
         }
-        Action = [
-          "s3:PutObject",
-          "s3:PutObjectAcl"
-        ]
-        Resource = "${aws_s3_bucket.maildummy.arn}/*"
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.maildummy.arn}/${local.raw_prefix}*"
         Condition = {
           StringEquals = {
             "AWS:SourceAccount" = data.aws_caller_identity.current.account_id
           }
           ArnLike = {
             "AWS:SourceArn" = local.receipt_rule_arn
+          }
+        }
+      },
+      {
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          aws_s3_bucket.maildummy.arn,
+          "${aws_s3_bucket.maildummy.arn}/*",
+        ]
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
           }
         }
       }
@@ -293,6 +314,10 @@ data "aws_partition" "current" {}
 data "aws_region" "current" {}
 
 locals {
+  # Key prefix SES writes received mail under; the S3 policy and the lifecycle
+  # rule are scoped to it.
+  raw_prefix = "raw/"
+
   region = try(lookup(data.aws_region.current, "region"), lookup(data.aws_region.current, "name"))
 
   # SES inbound endpoint for the provider's region.

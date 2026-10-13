@@ -104,7 +104,7 @@ With `dns_provider = "none"`, make sure the records from the `dns_records` outpu
 
 - The S3 bucket is private, encrypted (AES256 with bucket key), and blocks all public access.
 - The SNS topic is unencrypted by default (SES cannot use the AWS-managed SNS key); the Terraform module accepts a customer-managed key via `sns_kms_key_arn`. The topic policy restricts publishing to SES for this account and receipt rule.
-- The S3 bucket policy restricts writes to SES using `SourceAccount` and `SourceArn` conditions.
+- The S3 bucket policy restricts writes to SES using `SourceAccount` and `SourceArn` conditions. In the Terraform module SES may only call `s3:PutObject`, only under `raw/`, and the policy denies every request that does not use TLS (`aws:SecureTransport` is `false`). ACLs are disabled (object ownership `BucketOwnerEnforced`), so access is controlled by policy alone.
 - Emails are automatically deleted after the configured retention period.
 - Use a dedicated subdomain (e.g. `maildummy.*`) that is isolated from production mail.
 
