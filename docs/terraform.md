@@ -2,13 +2,34 @@
 
 Module path: `terraform/modules/ses_maildummy`
 
+## Versioning and pinning
+
+The repository uses one tag series per artifact:
+
+| Tag | Artifact | Used by |
+|-----|----------|---------|
+| `tf-v<version>` | Terraform modules under `terraform/modules/` | `source = "...?ref=tf-v<version>"` |
+| `cdk-v<version>` | `@de-otio/maildummy-cdk` on npm | Creating a release with this tag runs the publish workflow, which refuses to publish unless the tag matches the version in `cdk/package.json` |
+
+The Node and Python helpers are installed from git and have no tag series of their own; pin them to a tag or a commit as described in [Helper scripts](helper-scripts.md).
+
+See the repository's Tags page for what has been published. Always pin the module in your own configuration: `?ref=main` changes under you on every merge. Pin to a `tf-v<version>` tag, or, for a stronger guarantee, to a full 40-character commit SHA. A tag can in principle be moved or re-created; a commit SHA cannot, so a SHA is the pin to use when you want to be certain which code you apply. Check `git rev-parse tf-v<version>^{commit}` once and record the SHA next to the tag.
+
+```hcl
+source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy?ref=tf-v<version>"
+# or, stronger:
+source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy?ref=<full-commit-sha>"
+```
+
 ## Usage
+
+The examples below omit the `?ref=` for brevity; add one as described above.
 
 ### Route53
 
 ```hcl
 module "maildummy" {
-  source = "github.com/your-org/maildummy//terraform/modules/ses_maildummy"
+  source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy"
 
   maildummy_domain      = "maildummy.example.com"
   dns_provider          = "route53"
@@ -28,7 +49,7 @@ module, `terraform/modules/ses_maildummy_cloudflare`, which takes the core modul
 
 ```hcl
 module "maildummy" {
-  source = "github.com/your-org/maildummy//terraform/modules/ses_maildummy"
+  source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy"
 
   maildummy_domain      = "maildummy.example.com"
   dns_provider          = "none"
@@ -39,7 +60,7 @@ module "maildummy" {
 }
 
 module "maildummy_cloudflare" {
-  source = "github.com/your-org/maildummy//terraform/modules/ses_maildummy_cloudflare"
+  source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy_cloudflare"
 
   zone_id     = "your-zone-id"
   dns_records = module.maildummy.dns_records
@@ -110,7 +131,7 @@ that rule instead.
 | `receipt_rule_name` | `string` | yes | — | Name for the new receipt rule |
 | `receipt_rule_after` | `string` | no | `null` | Existing rule to place this rule after; `null` inserts it first |
 | `email_retention_days` | `number` | no | `1` | Days before emails are auto-deleted (must be > 0) |
-| `tags` | `map(string)` | no | `{}` | Tags applied to all taggable resources |
+| `tags` | `map(string)` | no | `{}` | Tags applied to the S3 bucket and the SNS topic (the other resources are not taggable in the provider) |
 | `enable_dkim` | `bool` | no | `false` | Enable Easy DKIM and publish its three CNAME records; works on the first apply |
 | `wait_for_verification` | `bool` | no | `false` | Block the apply until SES reports the domain as verified |
 | `verification_timeout` | `string` | no | `"15m"` | How long `wait_for_verification` waits (e.g. `"90s"`, `"15m"`, `"1h"`) |

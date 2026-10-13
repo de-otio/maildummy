@@ -5,7 +5,7 @@ This guide will help you set up the maildummy module to be referenced via git so
 ## Step 1: Initialize Git Repository (if not already done)
 
 ```bash
-cd /Users/rmyers/repos/dot/maildummy
+cd path/to/maildummy
 
 # Check if git is initialized
 git status
@@ -17,7 +17,7 @@ git init
 ## Step 2: Create Initial Commit
 
 ```bash
-cd /Users/rmyers/repos/dot/maildummy
+cd path/to/maildummy
 
 # Add all files
 git add .
@@ -31,9 +31,9 @@ git commit -m "Initial commit: Maildummy infrastructure module"
 ### Option A: GitHub
 
 ```bash
-# Create a new repository on GitHub (e.g., github.com/your-org/maildummy)
+# Create a new repository on GitHub (e.g., github.com/de-otio/maildummy)
 # Then add the remote:
-git remote add origin https://github.com/your-org/maildummy.git
+git remote add origin https://github.com/de-otio/maildummy.git
 git branch -M main
 git push -u origin main
 ```
@@ -43,7 +43,7 @@ git push -u origin main
 ```bash
 # Create a new repository on GitLab
 # Then add the remote:
-git remote add origin https://gitlab.com/your-org/maildummy.git
+git remote add origin https://gitlab.com/<your-group>/maildummy.git
 git branch -M main
 git push -u origin main
 ```
@@ -63,31 +63,23 @@ Once the repository is pushed, update `environments/dev/terraform/main.tf`:
 
 ```hcl
 module "ses_maildummy" {
-  source = "git::https://github.com/your-org/maildummy.git//terraform/modules/ses_maildummy?ref=main"
+  source = "git::https://github.com/de-otio/maildummy.git//terraform/modules/ses_maildummy?ref=main"
 
   # ... rest of configuration
 }
 ```
 
-Replace `your-org` and the URL with your actual repository details.
+If you host your own copy of the repository, replace the URL with your own.
 
-## Step 5: Use Version Tags (Recommended)
+## Step 5: Pin a Tag or Commit (Recommended)
 
-For production use, create version tags:
-
-```bash
-cd /Users/rmyers/repos/dot/maildummy
-
-# Create a version tag
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-Then reference specific versions in Terraform:
+Terraform module releases are tagged `tf-v<version>` (CDK releases use `cdk-v<version>`, which also triggers the npm publish workflow). Reference a tag in Terraform:
 
 ```hcl
-source = "git::https://github.com/your-org/maildummy.git//terraform/modules/ses_maildummy?ref=v1.0.0"
+source = "git::https://github.com/de-otio/maildummy.git//terraform/modules/ses_maildummy?ref=tf-v<version>"
 ```
+
+For a stronger guarantee, pin the full 40-character commit SHA instead (`?ref=<full-commit-sha>`). A tag can be moved or re-created; a commit SHA cannot.
 
 ## Benefits
 
@@ -111,7 +103,7 @@ source = "git::https://github.com/your-org/maildummy.git//terraform/modules/ses_
 If using a private repository, you may need to configure git credentials or use SSH:
 
 ```hcl
-source = "git::git@github.com:your-org/maildummy.git//terraform/modules/ses_maildummy?ref=main"
+source = "git::git@github.com:de-otio/maildummy.git//terraform/modules/ses_maildummy?ref=main"
 ```
 
 Or use Terraform's built-in credential helpers for HTTPS.

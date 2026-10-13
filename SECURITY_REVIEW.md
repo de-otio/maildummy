@@ -6,7 +6,9 @@
 
 ## Executive Summary
 
-This document outlines the security review findings and improvements made to the maildummy Terraform module. The module has been reviewed for security best practices, compliance, and potential vulnerabilities.
+This document outlines the security review findings and improvements made to the maildummy Terraform module and, where noted, the CDK construct. It was first written in 2024 and has been corrected to describe what the code on this branch actually does.
+
+maildummy is test infrastructure for receiving disposable test mail on a dedicated subdomain. It is not a hardened mail store: do not route real or sensitive mail to it. Residual risks are listed under "Residual risks" below.
 
 ## Security Improvements Implemented
 
@@ -16,34 +18,43 @@ This document outlines the security review findings and improvements made to the
 
 - Missing server-side encryption
 - Missing tags on bucket resource
+- ACLs were managed on the bucket, and the bucket policy let SES do more than write received mail
+- No TLS requirement on the bucket
 
 **Fixes Applied:**
 
 - ✅ Added `aws_s3_bucket_server_side_encryption_configuration` with AES256 encryption
 - ✅ Enabled bucket key for cost optimization
-- ✅ Added tags to S3 bucket resource
+- ✅ Applied the `tags` variable to the S3 bucket resource
+- ✅ Disabled ACLs (`BucketOwnerEnforced` object ownership)
+- ✅ Scoped the SES grant to `s3:PutObject` on `raw/*` only
+- ✅ Terraform bucket policy denies every request made without TLS (`aws:SecureTransport` is `false`)
 
 **Current Status:**
 
 - ✅ Public access blocked (already implemented)
-- ✅ Lifecycle policy configured (already implemented)
-- ✅ Server-side encryption enabled
-- ✅ Tags applied
+- ✅ Lifecycle policy configured for the `raw/` prefix (already implemented)
+- ✅ Server-side encryption enabled (AES256 / S3-managed keys, not customer-managed)
+- ✅ ACLs disabled; access is controlled by the bucket policy alone
+- ✅ CDK construct: same ownership, `raw/*` scoping and encryption; TLS is enforced with `enforceSSL: true`, which adds CDK's own deny statement rather than the one the Terraform module writes
+- ⚠️ Versioning, access logging and object lock are not configured
 
 ### 2. SNS Topic Security ✅
 
 **Issues Found:**
 
 - Missing encryption at rest
+- Topic policy not conditioned on the source account or receipt rule
 
 **Fixes Applied:**
 
-- ✅ Added KMS encryption using AWS managed key (`alias/aws/sns`)
+- ✅ Terraform: optional customer-managed KMS encryption through `sns_kms_key_arn`. The AWS-managed key (`alias/aws/sns`) is rejected by a variable validation, because its key policy cannot be edited and does not let SES call `kms:GenerateDataKey*` / `kms:Decrypt`, so SES could not publish. The key policy a customer-managed key needs is exposed as the `sns_kms_key_policy_statement` output.
+- ✅ Topic policy allows `SNS:Publish` from `ses.amazonaws.com` only with `AWS:SourceAccount` (this account) and `AWS:SourceArn` (this receipt rule) conditions, in both Terraform and CDK
 
 **Current Status:**
 
-- ✅ Encryption at rest enabled
-- ✅ Tags applied (already implemented)
+- ⚠️ The topic is **unencrypted by default**. Terraform encrypts it only when `sns_kms_key_arn` is set. The CDK construct has no KMS option and always creates an unencrypted topic.
+- ✅ Tags applied to the topic in Terraform through the `tags` variable (already implemented)
 
 ### 3. IAM Policy Security ✅
 
@@ -54,14 +65,14 @@ This document outlines the security review findings and improvements made to the
 
 **Fixes Applied:**
 
-- ✅ Added `ArnLike` condition to S3 bucket policy to restrict access to specific SES receipt rule
-- ✅ Added `ArnLike` condition to SNS topic policy to restrict access to specific SES receipt rule
+- ✅ Added `AWS:SourceAccount` and `ArnLike` `AWS:SourceArn` conditions to the S3 bucket policy to restrict access to this account's SES receipt rule (Terraform and CDK)
+- ✅ Added the same two conditions to the SNS topic policy (Terraform and CDK)
 
 **Current Status:**
 
-- ✅ Source account validation (already implemented)
-- ✅ Source ARN validation (newly added)
-- ✅ Least privilege principle followed
+- ✅ Source account validation
+- ✅ Source ARN validation (the receipt rule's ARN, built from the rule set and rule names)
+- ✅ The SES principal gets only `s3:PutObject` under `raw/*` and `SNS:Publish` on the topic
 
 ### 4. Variable Validation ✅
 
@@ -92,7 +103,9 @@ This document outlines the security review findings and improvements made to the
 
 **Current Status:**
 
-- ✅ All resources properly tagged (S3, SNS, SES resources)
+- ✅ Terraform applies the `tags` variable to the S3 bucket and the SNS topic
+- ⚠️ The SES domain identity, DKIM, receipt rule set and receipt rule, and the Route53 records are not tagged: the AWS provider does not accept tags on those resources
+- ⚠️ The CDK construct has no tags prop and sets no tags itself. Tags added with `Tags.of(...)` or stack tags reach the resources CDK can tag (such as the bucket and topic).
 
 ## Security Best Practices Compliance
 
@@ -101,23 +114,25 @@ This document outlines the security review findings and improvements made to the
 1. **Encryption at Rest**
 
    - S3: AES256 server-side encryption with bucket key enabled
-   - SNS: KMS encryption using AWS managed key
+   - SNS: unencrypted by default; Terraform can encrypt the topic with a customer-managed KMS key (`sns_kms_key_arn`); the CDK construct cannot
 
 2. **Encryption in Transit**
 
-   - SES uses TLS for email transmission (AWS managed)
-   - S3 and SNS use HTTPS by default
+   - SES receives mail over SMTP; whether the sending side uses TLS is up to the sender (SES offers STARTTLS but a sender may deliver in plaintext)
+   - S3: the bucket policy denies requests that do not use TLS (Terraform policy; `enforceSSL` in CDK)
+   - SNS: the AWS endpoints use HTTPS; the topic policy does not add a TLS-only condition
 
 3. **Least Privilege Access**
 
-   - S3 bucket policy restricts access to SES service only
-   - SNS topic policy restricts access to SES service only
-   - Both policies include source account and source ARN validation
+   - The S3 bucket policy grants SES `s3:PutObject` on `raw/*` only (plus a TLS-only deny)
+   - The SNS topic policy grants SES `SNS:Publish` only
+   - Both grants carry `AWS:SourceAccount` and `AWS:SourceArn` conditions
+   - Reading the stored mail is left to the caller's own IAM permissions; the module creates no reader role
 
 4. **Public Access Prevention**
 
    - S3 bucket has public access block enabled
-   - All ACLs blocked
+   - ACLs are disabled (`BucketOwnerEnforced`)
 
 5. **Data Retention**
 
@@ -131,21 +146,21 @@ This document outlines the security review findings and improvements made to the
    - Type checking on all variables
 
 7. **Resource Tagging**
-   - All resources support tagging for cost allocation and compliance
+   - The Terraform `tags` variable is applied to the S3 bucket and SNS topic; SES resources and DNS records are not taggable (see section 5)
 
 ### ⚠️ Considerations and Recommendations
 
 1. **SES Domain Verification**
 
-   - The `aws_ses_domain_identity_verification` resource is currently commented out due to pipeline hangs
-   - **Recommendation**: Consider implementing a separate verification step in CI/CD pipeline
-   - **Risk**: Low - DNS records are still created, verification happens automatically
+   - In Terraform, `aws_ses_domain_identity_verification` is created only when `wait_for_verification = true` (default `false`), because the apply blocks until DNS has propagated
+   - **Recommendation**: Check verification in a separate CI/CD step instead of blocking the apply
+   - **Risk**: Low - DNS records are still created (or published by you with `dns_provider = "none"`) and SES verifies the domain asynchronously
 
 2. **KMS Key Management**
 
-   - Currently using AWS managed key for SNS encryption
-   - **Recommendation**: For higher security requirements, consider using customer-managed KMS keys
-   - **Trade-off**: Customer-managed keys provide more control but require additional setup
+   - The SNS topic is unencrypted by default; the AWS-managed key `alias/aws/sns` cannot be used because SES cannot publish to a topic encrypted with it
+   - **Recommendation**: If the notification payload must be encrypted at rest, pass a customer-managed key as `sns_kms_key_arn` (Terraform only) with the key policy statement from the `sns_kms_key_policy_statement` output
+   - **Trade-off**: A customer-managed key costs more and needs its key policy maintained; the CDK construct has no equivalent option
 
 3. **S3 Bucket Versioning**
 
@@ -177,24 +192,35 @@ This document outlines the security review findings and improvements made to the
 
 ### AWS Well-Architected Framework
 
-- ✅ **Security Pillar**: Encryption, access control, and monitoring considerations addressed
-- ✅ **Operational Excellence**: Lifecycle management, tagging, and automation
-- ✅ **Cost Optimization**: Lifecycle policies, bucket keys, and retention policies
-- ✅ **Reliability**: Automated cleanup and error handling
+This is an informal mapping, not an assessment or certification.
+
+- **Security Pillar**: S3 encryption and access control are in place; SNS encryption is optional; monitoring is not provided (see considerations above)
+- **Operational Excellence**: Lifecycle management and declarative deployment; tagging is partial
+- **Cost Optimization**: Lifecycle policies, bucket keys, and retention policies
+- **Reliability**: Not addressed beyond SES and S3 managed-service defaults; the module has no alarms or retries of its own
 
 ### Data Protection
 
-- ✅ Encryption at rest (S3 and SNS)
-- ✅ Encryption in transit (AWS managed)
-- ✅ Automatic data deletion (lifecycle policy)
-- ✅ Access logging capability (can be enabled)
+- ✅ Encryption at rest for S3 (AES256); SNS only with a customer-managed key in Terraform
+- ✅ TLS required for S3 requests
+- ✅ Automatic data deletion of `raw/` objects after the retention period (lifecycle policy)
+- ⚠️ Access logging is not configured by the module
 
 ### Access Control
 
-- ✅ Least privilege IAM policies
+- ✅ The SES grants are narrow: `s3:PutObject` on `raw/*`, `SNS:Publish` on the topic
 - ✅ Service-specific access restrictions
 - ✅ Source account and ARN validation
 - ✅ Public access prevention
+
+## Residual risks
+
+- **Any sender can deliver mail.** The receipt rule accepts every message addressed to the domain (spam and virus scanning are off, `scan_enabled = false`). Anyone who can reach the MX record can place mail in the bucket and trigger SNS notifications, so tests must not trust the sender or content of a received message.
+- **Stored mail is plaintext to anyone with bucket read access.** S3 encryption at rest does not protect it from principals who can call `s3:GetObject`. Keep test accounts and the bucket's IAM access narrow.
+- **The SNS topic is unencrypted by default** (and always, in the CDK construct).
+- **Retention is best effort.** Lifecycle expiry runs asynchronously and applies only under `raw/`; the minimum retention is one day.
+- **Dev defaults are destructive.** The CDK construct defaults to `RemovalPolicy.DESTROY` with auto-deleted objects, and activating the receipt rule set affects the whole region.
+- **No monitoring, versioning or access logging** is provisioned.
 
 ## Remaining Security Considerations
 
@@ -238,13 +264,13 @@ This document outlines the security review findings and improvements made to the
 
 The maildummy Terraform module has been reviewed and improved with the following security enhancements:
 
-- ✅ S3 bucket encryption enabled
-- ✅ SNS topic encryption enabled
-- ✅ Enhanced IAM policies with ARN validation
+- ✅ S3 bucket encryption enabled (AES256), ACLs disabled, SES writes limited to `raw/*`, TLS required
+- ✅ SNS topic encryption available through a customer-managed key (Terraform only); off by default
+- ✅ Bucket and topic policies conditioned on the source account and receipt rule ARN (Terraform and CDK)
 - ✅ Input validation added
-- ✅ Resource tagging improved
+- ✅ `tags` applied to the S3 bucket and SNS topic
 
-The module now follows AWS security best practices and is suitable for production use with appropriate monitoring and operational procedures in place.
+maildummy is intended as test infrastructure: it receives disposable test mail on a dedicated subdomain in a non-production account. These measures limit what the AWS resources expose; they do not make it suitable for storing real or sensitive mail, and it ships with no monitoring or alerting. Read the residual risks above before deploying it anywhere that matters.
 
 ## References
 

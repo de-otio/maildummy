@@ -8,7 +8,7 @@ The simplest and most maintainable approach is to use Terraform's built-in git s
 
 ```hcl
 module "ses_maildummy" {
-  source = "git::https://github.com/your-org/maildummy.git//terraform/modules/ses_maildummy?ref=main"
+  source = "git::https://github.com/de-otio/maildummy.git//terraform/modules/ses_maildummy?ref=tf-v<version>"
 
   # ... rest of configuration
 }
@@ -26,7 +26,7 @@ module "ses_maildummy" {
 1. **Initialize git repository** (if not already done):
 
    ```bash
-   cd /Users/rmyers/repos/dot/maildummy
+   cd path/to/maildummy
    git init
    git add .
    git commit -m "Initial commit: Maildummy infrastructure module"
@@ -35,7 +35,7 @@ module "ses_maildummy" {
 2. **Push to remote**:
 
    ```bash
-   git remote add origin https://github.com/your-org/maildummy.git
+   git remote add origin https://github.com/de-otio/maildummy.git
    git push -u origin main
    ```
 
@@ -43,23 +43,18 @@ module "ses_maildummy" {
 
    ```hcl
    module "ses_maildummy" {
-     source = "git::https://github.com/your-org/maildummy.git//terraform/modules/ses_maildummy?ref=main"
+     source = "git::https://github.com/de-otio/maildummy.git//terraform/modules/ses_maildummy?ref=main"
      # ... rest of configuration
    }
    ```
 
-4. **Use tags for versioning**:
-
-   ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
-   ```
-
-   Then reference specific versions:
+4. **Pin a version**. Terraform module releases are tagged `tf-v<version>` (CDK releases use `cdk-v<version>`; see the repository's Tags page for what is published). Reference a tag:
 
    ```hcl
-   source = "git::https://github.com/your-org/maildummy.git//terraform/modules/ses_maildummy?ref=v1.0.0"
+   source = "git::https://github.com/de-otio/maildummy.git//terraform/modules/ses_maildummy?ref=tf-v<version>"
    ```
+
+   For a stronger guarantee, pin the full 40-character commit SHA instead (`?ref=<full-commit-sha>`): unlike a tag, a commit SHA cannot be moved. Avoid `?ref=main` outside quick experiments.
 
 ## Option 2: Terragrunt (Advanced)
 

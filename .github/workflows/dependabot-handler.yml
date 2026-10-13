@@ -1,6 +1,10 @@
-# Calls the org-shared workflow that runs Claude against each Dependabot PR
-# to check for supply-chain attack signals, then enables auto-merge if
-# approved. See https://github.com/de-otio/.github for implementation.
+# Calls the org-shared workflow that enables semver-based auto-merge for
+# Dependabot PRs (minor/patch only; majors are left for a human).
+# See https://github.com/de-otio/.github for implementation.
+#
+# The called workflow is pinned to a commit SHA because this trigger runs with
+# the base repo's token. To update the pin:
+#   gh api repos/de-otio/.github/commits/main --jq .sha
 
 name: Dependabot review
 
@@ -8,17 +12,23 @@ on:
   pull_request_target:
     types: [opened, synchronize, reopened]
 
+# Key on the PR number: for pull_request_target github.ref is the base branch,
+# so a ref-based group would let one Dependabot PR cancel another's run.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
+# The called workflow requests contents: write and pull-requests: write, and
+# nothing else (no OIDC, no external credentials).
 permissions:
   contents: write
   pull-requests: write
-  id-token: write
 
 jobs:
   review:
-    if: github.actor == 'dependabot[bot]'
-    uses: de-otio/.github/.github/workflows/dependabot-claude-review.yml@main
-    secrets: inherit
+    # Gate on the PR author, not github.actor: the actor is whoever triggered
+    # the event (e.g. pushed to the PR branch) and is not a reliable identity.
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    uses: de-otio/.github/.github/workflows/dependabot-claude-review.yml@78d17f9083c183ecd05379e1e65744c9228f454a # main
+    # No `secrets: inherit`: the called workflow only uses the automatic
+    # GITHUB_TOKEN, which is passed to reusable workflows implicitly.

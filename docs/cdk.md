@@ -6,9 +6,9 @@ Package: `@de-otio/maildummy-cdk` (in the `cdk/` directory)
 
 ```bash
 npm install @de-otio/maildummy-cdk
-# or from git
-npm install github:your-org/maildummy#main
 ```
+
+Pin an exact version in your `package.json`. The package is published from releases tagged `cdk-v<version>`; the publish workflow only runs for a tag that matches the version in `cdk/package.json`, so `@de-otio/maildummy-cdk@<version>` corresponds to the git tag `cdk-v<version>`. For the strongest guarantee, commit your lockfile and review the integrity hash it records.
 
 Peer dependencies: `aws-cdk-lib ^2.100.0`, `constructs ^10.0.0`.
 

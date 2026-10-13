@@ -27,16 +27,4 @@ The `files` field in `package.json` ensures only `lib/**/*.js` and `lib/**/*.d.t
 
 ## Using from git (without publishing)
 
-Consumers can install directly from the repository:
-
-```bash
-npm install github:your-org/maildummy#main
-```
-
-Since `lib/` is not committed, consumers installing from git need to build after install. Add a `prepare` script if you want this to happen automatically:
-
-```json
-"scripts": {
-  "prepare": "npm run build"
-}
-```
+`npm install github:de-otio/maildummy#<ref>` installs the repository's root package (`@de-otio/maildummy`, the Node helper), not this one, so the construct cannot be installed straight from git. Install it from npm (`npm install @de-otio/maildummy-cdk`), or build it from a checkout of the tag you want and use `npm pack` or `npm link`.

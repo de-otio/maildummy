@@ -1,5 +1,6 @@
 version: 2
 updates:
+  # CDK construct (@de-otio/maildummy-cdk)
   - package-ecosystem: npm
     directory: /cdk
     schedule:
@@ -13,6 +14,66 @@ updates:
       production-dependencies:
         dependency-type: production
         update-types: ['minor', 'patch']
+
+  # Node.js helper (@de-otio/maildummy, repo root)
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types: ['minor', 'patch']
+      production-dependencies:
+        dependency-type: production
+        update-types: ['minor', 'patch']
+
+  # Python helper (maildummy, python/)
+  - package-ecosystem: pip
+    directory: /python
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types: ['minor', 'patch']
+      production-dependencies:
+        dependency-type: production
+        update-types: ['minor', 'patch']
+
+  # OpenTofu modules. The provider version ranges here are deliberate
+  # compatibility windows (aws 5.x and 6.x, cloudflare 5.x), so majors are
+  # left for a human to widen consciously. The test fixtures (aws5/aws6)
+  # intentionally pin one major each and are not tracked.
+  - package-ecosystem: terraform
+    directory: /terraform/modules/ses_maildummy
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      terraform-providers:
+        update-types: ['minor', 'patch']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: terraform
+    directory: /terraform/modules/ses_maildummy_cloudflare
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      terraform-providers:
+        update-types: ['minor', 'patch']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /

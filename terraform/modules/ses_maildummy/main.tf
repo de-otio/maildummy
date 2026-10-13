@@ -68,10 +68,6 @@ resource "aws_s3_bucket" "maildummy" {
   bucket = var.s3_bucket_name
 
   tags = var.tags
-
-  lifecycle {
-    prevent_destroy = false
-  }
 }
 
 # ACLs are disabled: the bucket owner owns every object, and access is granted
