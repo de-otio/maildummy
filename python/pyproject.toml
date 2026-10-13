@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "maildummy"
+version = "0.1.0"
+description = "Fetch sign-in links and other mail captured by a maildummy S3 bucket, for end-to-end tests."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["boto3>=1.26"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "mypy>=1.10",
+  "boto3-stubs[s3]>=1.26",
+]
+
+[project.scripts]
+maildummy-link = "maildummy.cli:main"
+
+[project.urls]
+Repository = "https://github.com/de-otio/maildummy"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/maildummy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
