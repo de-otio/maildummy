@@ -69,6 +69,40 @@ async function waitForMagicLink(bucket: string, email: string, region: string, t
 }
 ```
 
+### From Python (pytest)
+
+Install the `maildummy` package, pinned to a release tag:
+
+```bash
+pip install "maildummy @ git+https://github.com/de-otio/maildummy@<tag>#subdirectory=python"
+```
+
+`wait_for_link` does the polling for you. Take `since` just before you trigger the email so that mail from earlier runs is ignored:
+
+```python
+from datetime import datetime, timezone
+
+from maildummy import link_pattern, wait_for_link
+
+
+def test_sign_in(api_client):
+    test_email = "test-123@maildummy.example.com"
+    started = datetime.now(timezone.utc)
+
+    api_client.post("/auth/send-magic-link", json={"email": test_email})
+
+    link = wait_for_link(
+        "my-maildummy-bucket",
+        test_email,
+        pattern=link_pattern("https://app.example.com/"),
+        since=started,
+        timeout=60,
+    )
+    # a MailTimeout (a TimeoutError) is raised if no mail arrives in time
+```
+
+See [Helper scripts](helper-scripts.md) for the full reference.
+
 ## 4. Complete authentication
 
 ```ts
