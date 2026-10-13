@@ -26,9 +26,9 @@ variable "route53_zone_id" {
 }
 
 variable "aws_region" {
-  description = "AWS region for SES resources"
+  description = "Deprecated and ignored: the module uses the aws provider's region. If set, it must equal that region or the plan fails. Remove it from your configuration."
   type        = string
-  default     = "eu-central-1"
+  default     = null
 }
 
 variable "s3_bucket_name" {

@@ -14,7 +14,6 @@ module "maildummy" {
   maildummy_subdomain   = "maildummy"
   dns_provider          = "route53"
   route53_zone_id       = "Z1234567890ABC"
-  aws_region            = "eu-central-1"
   s3_bucket_name        = "my-project-maildummy"
   sns_topic_name        = "my-project-maildummy-notifications"
   receipt_rule_set_name = "my-existing-ruleset"
@@ -35,7 +34,6 @@ module "maildummy" {
   maildummy_domain      = "maildummy.example.com"
   maildummy_subdomain   = "maildummy"
   dns_provider          = "none"
-  aws_region            = "eu-central-1"
   s3_bucket_name        = "my-project-maildummy"
   sns_topic_name        = "my-project-maildummy-notifications"
   receipt_rule_set_name = "my-existing-ruleset"
@@ -57,7 +55,7 @@ Set `dns_provider = "none"` and publish the records in the `dns_records` output
 
 ## Prerequisites
 
-- Terraform >= 1.0 or OpenTofu
+- Terraform >= 1.2 or OpenTofu
 - AWS provider >= 5.0, < 7.0 (both 5.x and 6.x are tested)
 - Cloudflare provider >= 5.12.0, < 6.0.0, only if you use the `ses_maildummy_cloudflare` module
 - An SES receipt rule set, active in the region (see [Receipt rule set](#receipt-rule-set))
@@ -105,7 +103,7 @@ that rule instead.
 | `maildummy_subdomain` | `string` | yes | — | Subdomain without zone, e.g. `maildummy` |
 | `dns_provider` | `string` | no | `"none"` | `"route53"` or `"none"` |
 | `route53_zone_id` | `string` | if route53 | `null` | Route53 hosted zone ID |
-| `aws_region` | `string` | no | `"eu-central-1"` | AWS region for SES |
+| `aws_region` | `string` | no | `null` | Deprecated and ignored: the module uses the aws provider's region. If set, it must equal that region or the plan fails. |
 | `s3_bucket_name` | `string` | yes | — | S3 bucket name |
 | `sns_topic_name` | `string` | yes | — | SNS topic name |
 | `receipt_rule_set_name` | `string` | yes | — | Receipt rule set that holds the rule (must exist unless `create_rule_set`) |
@@ -151,6 +149,14 @@ Output: `record_ids` (`verification`, `mx`, `dkim`).
 topics encrypted with it), so the plan shows an in-place update removing its
 encryption; set `sns_kms_key_arn` to a customer-managed key to keep it encrypted.
 The topic policy gains `AWS:SourceAccount` and `AWS:SourceArn` conditions.
+
+The region and partition now come from the `aws` provider (`data.aws_region`,
+`data.aws_partition`) instead of `var.aws_region` and a literal `arn:aws`. They feed
+the receipt-rule ARN in the S3 and SNS policies and the MX target. `aws_region` is
+deprecated and ignored: remove it. If you keep it, it must equal the provider's
+region or the plan fails with a precondition error. If you relied on the old default
+(`eu-central-1`) with a provider in another region, the policies and the MX record
+were wrong; the next plan corrects them in place.
 
 **Route53 users:** `dns_provider` no longer defaults to `"cloudflare"`, so keep
 `dns_provider = "route53"` set explicitly. If `enable_dkim = true`, the DKIM

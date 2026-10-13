@@ -37,7 +37,6 @@ module "maildummy" {
   maildummy_subdomain   = "maildummy"
   dns_provider          = "route53"
   route53_zone_id       = "Z1234567890ABC"
-  aws_region            = "eu-central-1"
   s3_bucket_name        = "my-project-maildummy"
   sns_topic_name        = "my-project-maildummy-notifications"
   receipt_rule_set_name = "my-existing-ruleset"
