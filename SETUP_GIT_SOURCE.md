@@ -71,23 +71,15 @@ module "ses_maildummy" {
 
 If you host your own copy of the repository, replace the URL with your own.
 
-## Step 5: Use Version Tags (Recommended)
+## Step 5: Pin a Tag or Commit (Recommended)
 
-For production use, create version tags:
-
-```bash
-cd path/to/maildummy
-
-# Create a version tag
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-Then reference specific versions in Terraform:
+Terraform module releases are tagged `tf-v<version>` (CDK releases use `cdk-v<version>`, which also triggers the npm publish workflow). Reference a tag in Terraform:
 
 ```hcl
-source = "git::https://github.com/de-otio/maildummy.git//terraform/modules/ses_maildummy?ref=v1.0.0"
+source = "git::https://github.com/de-otio/maildummy.git//terraform/modules/ses_maildummy?ref=tf-v<version>"
 ```
+
+For a stronger guarantee, pin the full 40-character commit SHA instead (`?ref=<full-commit-sha>`). A tag can be moved or re-created; a commit SHA cannot.
 
 ## Benefits
 

@@ -18,6 +18,8 @@ The Node.js helper is the root package `@de-otio/maildummy` (Node 20 or later). 
 npm install --save-dev "github:de-otio/maildummy#<tag>"
 ```
 
+`<tag>` is a tag of this repository (for example a `cdk-v<version>` or `tf-v<version>` tag; the helpers have no tag series of their own, so a tag marks the repository state you tested against). For a stronger guarantee use a full 40-character commit SHA in its place: a tag can be moved or re-created, a commit SHA cannot.
+
 ### Library
 
 ```js
@@ -63,6 +65,8 @@ The Python helper is an installable package, `maildummy`, whose only runtime dep
 ```bash
 pip install "maildummy @ git+https://github.com/de-otio/maildummy@<tag>#subdirectory=python"
 ```
+
+As for the Node.js helper, `<tag>` can be any tag of the repository, or a full commit SHA for a stronger guarantee.
 
 ### Library
 

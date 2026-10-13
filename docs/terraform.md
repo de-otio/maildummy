@@ -2,7 +2,28 @@
 
 Module path: `terraform/modules/ses_maildummy`
 
+## Versioning and pinning
+
+The repository uses one tag series per artifact:
+
+| Tag | Artifact | Used by |
+|-----|----------|---------|
+| `tf-v<version>` | Terraform modules under `terraform/modules/` | `source = "...?ref=tf-v<version>"` |
+| `cdk-v<version>` | `@de-otio/maildummy-cdk` on npm | Creating a release with this tag runs the publish workflow, which refuses to publish unless the tag matches the version in `cdk/package.json` |
+
+The Node and Python helpers are installed from git and have no tag series of their own; pin them to a tag or a commit as described in [Helper scripts](helper-scripts.md).
+
+See the repository's Tags page for what has been published. Always pin the module in your own configuration: `?ref=main` changes under you on every merge. Pin to a `tf-v<version>` tag, or, for a stronger guarantee, to a full 40-character commit SHA. A tag can in principle be moved or re-created; a commit SHA cannot, so a SHA is the pin to use when you want to be certain which code you apply. Check `git rev-parse tf-v<version>^{commit}` once and record the SHA next to the tag.
+
+```hcl
+source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy?ref=tf-v<version>"
+# or, stronger:
+source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy?ref=<full-commit-sha>"
+```
+
 ## Usage
+
+The examples below omit the `?ref=` for brevity; add one as described above.
 
 ### Route53
 

@@ -31,7 +31,8 @@ Both create the same set of resources: SES domain identity, S3 bucket, SNS topic
 
 ```hcl
 module "maildummy" {
-  source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy"
+  # Pin a release tag (tf-v<version>) or a full commit SHA; see docs/terraform.md
+  source = "github.com/de-otio/maildummy//terraform/modules/ses_maildummy?ref=tf-v<version>"
 
   maildummy_domain      = "maildummy.example.com"
   dns_provider          = "route53"
