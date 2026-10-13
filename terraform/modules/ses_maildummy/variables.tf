@@ -4,25 +4,19 @@ variable "maildummy_domain" {
 }
 
 variable "maildummy_subdomain" {
-  description = "Maildummy subdomain without zone (e.g., maildummy for maildummy.example.com)"
+  description = "Maildummy subdomain without zone (e.g., maildummy for maildummy.example.com). Used for the Route53 record names."
   type        = string
 }
 
 variable "dns_provider" {
-  description = "DNS provider to use for DNS record creation. Must be either 'cloudflare' or 'route53'"
+  description = "Where the module publishes DNS records: 'route53' (records created in route53_zone_id) or 'none' (publish the values from the dns_records output yourself, e.g. with the ses_maildummy_cloudflare module)"
   type        = string
-  default     = "cloudflare"
+  default     = "none"
 
   validation {
-    condition     = contains(["cloudflare", "route53"], var.dns_provider)
-    error_message = "dns_provider must be either 'cloudflare' or 'route53'"
+    condition     = contains(["route53", "none"], var.dns_provider)
+    error_message = "dns_provider must be 'route53' or 'none'. For Cloudflare, set dns_provider = \"none\" and pass the dns_records output to the ses_maildummy_cloudflare module."
   }
-}
-
-variable "cloudflare_zone_id" {
-  description = "Cloudflare Zone ID for DNS record creation (required when dns_provider = 'cloudflare')"
-  type        = string
-  default     = null
 }
 
 variable "route53_zone_id" {

@@ -14,7 +14,7 @@ Maildummy ships two equivalent ways to provision the AWS resources:
 
 | Option | Location | DNS support |
 |--------|----------|-------------|
-| **Terraform module** | `terraform/modules/ses_maildummy` | Cloudflare or Route53 |
+| **Terraform module** | `terraform/modules/ses_maildummy` | Route53, Cloudflare (`ses_maildummy_cloudflare`), or any provider via the `dns_records` output |
 | **CDK construct** | `cdk/` (`@de-otio/maildummy-cdk`) | Route53 (or bring your own) |
 
 Both create the same set of resources: SES domain identity, S3 bucket, SNS topic, SES receipt rule, and the required IAM policies.

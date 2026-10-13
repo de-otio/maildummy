@@ -33,3 +33,34 @@ output "ses_identity_arn" {
   value       = aws_ses_domain_identity.maildummy.arn
 }
 
+
+output "dns_records" {
+  description = <<-EOT
+    DNS records SES needs, for publishing with any DNS provider. Names are fully
+    qualified. `dkim` holds three CNAMEs when enable_dkim is true and is empty
+    otherwise; its length is known at plan time even before SES issues the tokens.
+  EOT
+  value = {
+    verification = {
+      name  = "_amazonses.${var.maildummy_domain}"
+      type  = "TXT"
+      ttl   = 300
+      value = aws_ses_domain_identity.maildummy.verification_token
+    }
+    mx = {
+      name     = var.maildummy_domain
+      type     = "MX"
+      ttl      = 300
+      priority = 10
+      value    = local.ses_inbound_endpoint
+    }
+    dkim = [
+      for i in range(var.enable_dkim ? 3 : 0) : {
+        name  = "${aws_ses_domain_dkim.maildummy[0].dkim_tokens[i]}._domainkey.${var.maildummy_domain}"
+        type  = "CNAME"
+        ttl   = 300
+        value = "${aws_ses_domain_dkim.maildummy[0].dkim_tokens[i]}.dkim.amazonses.com"
+      }
+    ]
+  }
+}
