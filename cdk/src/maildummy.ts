@@ -1,5 +1,6 @@
 import { Construct } from "constructs";
 import {
+  ArnFormat,
   CfnOutput,
   Duration,
   RemovalPolicy,
@@ -179,6 +180,18 @@ export class Maildummy extends Construct {
         : undefined,
     });
 
+    // ARN of this construct's receipt rule, built from names rather than the
+    // rule resource: the bucket and topic policies reference it while the rule
+    // references the bucket and topic, so using the resource would be circular.
+    // formatArn keeps the partition a token (no literal "arn:aws").
+    const receiptRuleName = `${id}-maildummy-rule`;
+    const receiptRuleArn = stack.formatArn({
+      service: "ses",
+      resource: "receipt-rule-set",
+      resourceName: `${props.receiptRuleSetName}:receipt-rule/${receiptRuleName}`,
+      arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+    });
+
     // The three Easy DKIM CNAMEs (name and target) that verify the domain.
     this.dkimRecords = [1, 2, 3].map((i) => ({
       name: this.domainIdentity.getAtt(`DkimDNSTokenName${i}`).toString(),
@@ -194,6 +207,8 @@ export class Maildummy extends Construct {
       bucketKeyEnabled: true,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
+      // ACLs disabled: SES writes with PutObject only, so no PutObjectAcl grant.
+      objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_ENFORCED,
       removalPolicy,
       autoDeleteObjects: removalPolicy === RemovalPolicy.DESTROY,
       lifecycleRules: [
@@ -218,7 +233,7 @@ export class Maildummy extends Construct {
             "AWS:SourceAccount": account,
           },
           ArnLike: {
-            "AWS:SourceArn": `arn:aws:ses:${region}:${account}:receipt-rule-set/${props.receiptRuleSetName}:receipt-rule/*`,
+            "AWS:SourceArn": receiptRuleArn,
           },
         },
       })
@@ -282,7 +297,7 @@ export class Maildummy extends Construct {
       ruleSetName: ruleSet ? ruleSet.ref : props.receiptRuleSetName,
       after: props.receiptRuleAfter,
       rule: {
-        name: `${id}-maildummy-rule`,
+        name: receiptRuleName,
         enabled: true,
         scanEnabled: false,
         recipients: [props.maildummyDomain],

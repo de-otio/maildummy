@@ -257,6 +257,58 @@ describe("Maildummy", () => {
       });
     });
 
+    it("disables ACLs with BucketOwnerEnforced object ownership", () => {
+      const { template } = createStack();
+      template.hasResourceProperties("AWS::S3::Bucket", {
+        OwnershipControls: {
+          Rules: [{ ObjectOwnership: "BucketOwnerEnforced" }],
+        },
+      });
+    });
+
+    it("grants SES PutObject only, never an ACL action, on raw/* only", () => {
+      const { template } = createStack();
+      const policies = template.findResources("AWS::S3::BucketPolicy");
+      const statements = Object.values(policies)[0].Properties.PolicyDocument
+        .Statement as Array<Record<string, unknown>>;
+      const sesStatements = statements.filter(
+        (s) =>
+          JSON.stringify(s["Principal"]) ===
+          JSON.stringify({ Service: "ses.amazonaws.com" })
+      );
+      expect(sesStatements).toHaveLength(1);
+      expect(sesStatements[0]["Action"]).toBe("s3:PutObject");
+      expect(JSON.stringify(sesStatements[0]["Resource"])).toMatch(/\/raw\/\*/);
+      expect(JSON.stringify(statements)).not.toContain("PutObjectAcl");
+    });
+
+    it("scopes the SES grant to the receipt rule with a partition token", () => {
+      const { template } = createStack();
+      template.hasResourceProperties("AWS::S3::BucketPolicy", {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Sid: "AllowSESPuts",
+              Condition: {
+                ArnLike: {
+                  "AWS:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:",
+                        { Ref: "AWS::Partition" },
+                        ":ses:us-east-1:123456789012:receipt-rule-set/my-rule-set:receipt-rule/Test-maildummy-rule",
+                      ],
+                    ],
+                  },
+                },
+              },
+            }),
+          ]),
+        },
+      });
+    });
+
     it("enforces SSL on bucket", () => {
       const { template } = createStack();
       template.hasResourceProperties("AWS::S3::BucketPolicy", {

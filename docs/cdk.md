@@ -105,8 +105,10 @@ Without `receiptRuleAfter`, SES inserts the rule at the beginning of the rule se
 The construct creates the same resources as the Terraform module:
 
 - SES email identity (via `CfnEmailIdentity` / SESv2), verified through Easy DKIM CNAMEs
-- S3 bucket — AES256 encryption, bucket key, public access blocked, lifecycle on `raw/`
+- S3 bucket — AES256 encryption, bucket key, public access blocked, ACLs disabled
+  (`BucketOwnerEnforced`), TLS-only (denies `aws:SecureTransport` false), lifecycle on `raw/`
 - SNS topic — encrypted with the AWS-managed SNS KMS key
 - SES receipt rule — S3 action + optional SNS action
-- IAM policies — SES → S3 (`PutObject`/`PutObjectAcl` with source conditions), SES → SNS (`Publish`)
+- IAM policies — SES → S3 (`s3:PutObject` on `<bucket>/raw/*` only, no ACL actions,
+  conditioned on `AWS:SourceAccount` and the receipt rule's `AWS:SourceArn`), SES → SNS (`Publish`)
 - Route53 records (MX and the three DKIM CNAMEs) when `hostedZone` is provided
