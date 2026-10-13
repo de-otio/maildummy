@@ -4,8 +4,9 @@ variable "maildummy_domain" {
 }
 
 variable "maildummy_subdomain" {
-  description = "Maildummy subdomain without zone (e.g., maildummy for maildummy.example.com). Used for the Route53 record names."
+  description = "Deprecated: the Route53 record names are derived from maildummy_domain. If set, it must be the leading part of maildummy_domain (the domain equals it or starts with \"<subdomain>.\"), otherwise the plan fails. Existing Route53 deployments should keep it set: it keeps the record names relative to the zone, as in 1.x; removing it makes them fully qualified, which makes the provider replace the records."
   type        = string
+  default     = null
 }
 
 variable "dns_provider" {
