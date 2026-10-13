@@ -30,9 +30,10 @@ const maildummy = new Maildummy(stack, "Maildummy", {
   hostedZone: zone,
   emailRetentionDays: 1,
   enableSnsNotifications: true,
-  enableDkim: false,
 });
 ```
+
+The three DKIM CNAME records are created in the zone automatically.
 
 ### Without DNS (Cloudflare or other provider)
 
@@ -46,9 +47,16 @@ const maildummy = new Maildummy(stack, "Maildummy", {
 
 // Create these records in your DNS provider:
 // MX  maildummy.example.com → 10 inbound-smtp.<region>.amazonaws.com
-// TXT _amazonses.maildummy  → <verification token>
-// After enabling DKIM, create CNAME records using maildummy.dkimTokens
+// CNAME x3 (verify the domain) → maildummy.dkimRecords [{ name, value }, ...]
 ```
+
+SES verifies a SESv2 domain identity through its three Easy DKIM CNAME records
+(there is no `_amazonses` TXT record), so the identity stays unverified until
+they exist. They are exposed as `maildummy.dkimRecords` (name/value pairs) and as
+the stack outputs `DkimRecordName1..3` and `DkimRecordValue1..3`. Names are fully
+qualified (`<token>._domainkey.maildummy.example.com`); values look like
+`<token>.dkim.amazonses.com`. Create them as CNAMEs in your DNS provider; if the
+provider proxies records (e.g. Cloudflare), set them to DNS-only.
 
 ## Props
 
@@ -64,7 +72,7 @@ const maildummy = new Maildummy(stack, "Maildummy", {
 | `snsTopicName` | `string` | no | auto | SNS topic name |
 | `emailRetentionDays` | `number` | no | `1` | Days before emails are auto-deleted |
 | `enableSnsNotifications` | `boolean` | no | `true` | Add SNS action to the receipt rule |
-| `enableDkim` | `boolean` | no | `false` | Enable DKIM signing (after domain verification) |
+| `enableDkim` | `boolean` | no | `true` | DKIM signing for the identity (2048-bit Easy DKIM). `false` turns signing off only; the verification CNAMEs are always emitted |
 | `bucketRemovalPolicy` | `RemovalPolicy` | no | `DESTROY` | Removal policy for the S3 bucket |
 
 ## Receipt rule set
@@ -89,15 +97,20 @@ Without `receiptRuleAfter`, SES inserts the rule at the beginning of the rule se
 | `bucket` | `s3.Bucket` | The email storage bucket |
 | `topic` | `sns.Topic` | The notification topic |
 | `domainIdentity` | `ses.CfnEmailIdentity` | The SES domain identity (L1) |
-| `dkimTokens` | `string[]` | DKIM token names for external DNS (empty if DKIM disabled) |
+| `dkimRecords` | `{ name, value }[]` | The three Easy DKIM CNAME records that verify the domain (always three) |
+| `dkimTokens` | `string[]` | The CNAME names from `dkimRecords`; kept for backward compatibility |
 
 ## Resources created
 
 The construct creates the same resources as the Terraform module:
 
-- SES email identity (via `CfnEmailIdentity` / SESv2) with optional DKIM
-- S3 bucket — AES256 encryption, bucket key, public access blocked, lifecycle on `raw/`
-- SNS topic — encrypted with the AWS-managed SNS KMS key
+- SES email identity (via `CfnEmailIdentity` / SESv2), verified through Easy DKIM CNAMEs
+- S3 bucket — AES256 encryption, bucket key, public access blocked, ACLs disabled
+  (`BucketOwnerEnforced`), TLS-only (denies `aws:SecureTransport` false), lifecycle on `raw/`
+- SNS topic — not KMS-encrypted (SES cannot publish to a topic encrypted with the
+  AWS-managed SNS key, and this is test infrastructure)
 - SES receipt rule — S3 action + optional SNS action
-- IAM policies — SES → S3 (`PutObject`/`PutObjectAcl` with source conditions), SES → SNS (`Publish`)
-- Route53 records (MX, verification TXT, DKIM CNAMEs) when `hostedZone` is provided
+- IAM policies — SES → S3 (`s3:PutObject` on `<bucket>/raw/*` only, no ACL actions,
+  conditioned on `AWS:SourceAccount` and the receipt rule's `AWS:SourceArn`), SES → SNS
+  (`Publish`, with the same two conditions)
+- Route53 records (MX and the three DKIM CNAMEs) when `hostedZone` is provided
