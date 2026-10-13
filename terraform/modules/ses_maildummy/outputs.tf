@@ -64,3 +64,16 @@ output "dns_records" {
     ]
   }
 }
+
+output "sns_kms_key_policy_statement" {
+  description = "Key policy statement a customer-managed key passed as sns_kms_key_arn must contain so SES can publish to the encrypted topic"
+  value = jsonencode({
+    Sid    = "AllowSESToUseKeyForSNS"
+    Effect = "Allow"
+    Principal = {
+      Service = "ses.amazonaws.com"
+    }
+    Action   = ["kms:GenerateDataKey*", "kms:Decrypt"]
+    Resource = "*"
+  })
+}

@@ -93,8 +93,19 @@ variable "enable_dkim" {
 }
 
 variable "enable_sns_notifications" {
-  description = "Enable SNS notifications for received emails (set to false initially if receipt rule creation fails, then enable after policies propagate)"
+  description = "Add an SNS action to the receipt rule that publishes each received email to the topic"
   type        = bool
   default     = true
+}
+
+variable "sns_kms_key_arn" {
+  description = "ARN of a customer-managed KMS key for SNS topic encryption. null (default) leaves the topic unencrypted. The key policy must allow ses.amazonaws.com kms:GenerateDataKey* and kms:Decrypt (see the sns_kms_key_policy_statement output). The AWS-managed alias/aws/sns key does not work with SES."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.sns_kms_key_arn == null || !can(regex("alias/aws/", var.sns_kms_key_arn))
+    error_message = "AWS-managed keys (alias/aws/...) cannot be used: SES cannot publish to topics encrypted with them. Use a customer-managed key."
+  }
 }
 

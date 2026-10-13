@@ -73,9 +73,8 @@ export interface MaildummyProps {
   readonly emailRetentionDays?: number;
 
   /**
-   * Enable SNS notifications for received emails.
-   * Disable initially if receipt rule creation fails due to policy propagation,
-   * then re-enable after policies propagate.
+   * Add an SNS action to the receipt rule that publishes each received email
+   * to the topic.
    * @default true
    */
   readonly enableSnsNotifications?: boolean;

@@ -90,7 +90,7 @@ that rule instead.
 |----------|---------|
 | `aws_ses_domain_identity` | Verifies the maildummy domain with SES |
 | `aws_s3_bucket` + policies | Stores emails under `raw/`, encrypted (AES256), lifecycle-managed |
-| `aws_sns_topic` + policy | Optional email-arrival notifications (KMS-encrypted) |
+| `aws_sns_topic` + policy | Optional email-arrival notifications (unencrypted unless `sns_kms_key_arn` is set); policy limited to this account's receipt rule |
 | `aws_ses_receipt_rule` | Routes inbound mail to S3 (and optionally SNS) |
 | `aws_ses_receipt_rule_set` | Only when `create_rule_set = true` |
 | `aws_ses_active_receipt_rule_set` | Only when `activate_rule_set = true` |
@@ -116,6 +116,7 @@ that rule instead.
 | `tags` | `map(string)` | no | `{}` | Tags applied to all taggable resources |
 | `enable_dkim` | `bool` | no | `false` | Create DKIM CNAME records (enable after domain verification) |
 | `enable_sns_notifications` | `bool` | no | `true` | Add SNS action to the receipt rule |
+| `sns_kms_key_arn` | `string` | no | `null` | Customer-managed KMS key for the topic; its policy must grant `ses.amazonaws.com` `kms:GenerateDataKey*` and `kms:Decrypt`. `alias/aws/...` keys are rejected because SES cannot use them. |
 
 ## Outputs
 
@@ -128,6 +129,7 @@ that rule instead.
 | `sns_topic_name` | SNS topic name |
 | `receipt_rule_set_name` | The receipt rule set that holds the rule |
 | `ses_identity_arn` | SES domain identity ARN |
+| `sns_kms_key_policy_statement` | JSON key policy statement to add to the key passed as `sns_kms_key_arn` |
 | `dns_records` | Records to publish: `verification` (TXT), `mx`, and `dkim` (list of CNAMEs, empty unless `enable_dkim`). Each has a fully qualified `name`, `type`, `ttl` and `value`; `mx` also has `priority`. |
 
 ## `ses_maildummy_cloudflare` module
@@ -135,11 +137,17 @@ that rule instead.
 | Variable | Type | Required | Description |
 |----------|------|----------|-------------|
 | `zone_id` | `string` | yes | Cloudflare zone that contains the maildummy domain |
+| `sns_kms_key_policy_statement` | JSON key policy statement to add to the key passed as `sns_kms_key_arn` |
 | `dns_records` | `object` | yes | The `dns_records` output of `ses_maildummy` |
 
 Output: `record_ids` (`verification`, `mx`, `dkim`).
 
 ## Upgrading from 1.x to 2.0
+
+**All users:** the SNS topic no longer uses `alias/aws/sns` (SES cannot publish to
+topics encrypted with it), so the plan shows an in-place update removing its
+encryption; set `sns_kms_key_arn` to a customer-managed key to keep it encrypted.
+The topic policy gains `AWS:SourceAccount` and `AWS:SourceArn` conditions.
 
 **Route53 users:** no address changes. `dns_provider` no longer defaults to
 `"cloudflare"`, so keep `dns_provider = "route53"` set explicitly.

@@ -100,11 +100,16 @@ resource "aws_s3_bucket_public_access_block" "maildummy" {
   restrict_public_buckets = true
 }
 
-# SNS topic for email notifications
+# SNS topic for email notifications.
+# Unencrypted unless sns_kms_key_arn is set. The AWS-managed key (alias/aws/sns)
+# cannot be used: its key policy does not let AWS services such as SES call
+# kms:GenerateDataKey / kms:Decrypt, and it cannot be edited. A customer-managed
+# key must grant ses.amazonaws.com those actions (see the
+# sns_kms_key_policy_statement output).
 resource "aws_sns_topic" "maildummy" {
   name = var.sns_topic_name
 
-  kms_master_key_id = "alias/aws/sns" # Use AWS managed key for encryption
+  kms_master_key_id = var.sns_kms_key_arn
 
   tags = var.tags
 }
@@ -135,8 +140,6 @@ resource "aws_ses_active_receipt_rule_set" "maildummy" {
 # SES Receipt Rule - stores emails in S3 and notifies SNS.
 # SES places the rule after the rule named in receipt_rule_after; when that is
 # null, SES inserts it at the beginning of the rule set.
-# Note: Using separate SNS action instead of topic_arn in s3_action to avoid
-# policy validation issues during initial creation
 resource "aws_ses_receipt_rule" "maildummy" {
   name          = var.receipt_rule_name
   rule_set_name = var.create_rule_set ? aws_ses_receipt_rule_set.maildummy[0].rule_set_name : var.receipt_rule_set_name
@@ -152,9 +155,7 @@ resource "aws_ses_receipt_rule" "maildummy" {
     position          = 1
   }
 
-  # SNS action - notify when emails are received (optional to avoid policy validation issues)
-  # If receipt rule creation fails, set enable_sns_notifications = false, create the rule,
-  # then set it back to true and apply again
+  # SNS action - notify when emails are received
   dynamic "sns_action" {
     for_each = var.enable_sns_notifications ? [1] : []
     content {
@@ -193,7 +194,7 @@ resource "aws_s3_bucket_policy" "maildummy" {
             "AWS:SourceAccount" = data.aws_caller_identity.current.account_id
           }
           ArnLike = {
-            "AWS:SourceArn" = "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:receipt-rule-set/${var.receipt_rule_set_name}:receipt-rule/${var.receipt_rule_name}"
+            "AWS:SourceArn" = local.receipt_rule_arn
           }
         }
       }
@@ -201,10 +202,7 @@ resource "aws_s3_bucket_policy" "maildummy" {
   })
 }
 
-# IAM policy for SES to publish to SNS topic
-# Note: Policy is intentionally simple (no conditions) to avoid AWS SES validation issues
-# The policy allows SES service from any account in the same region to publish
-# In production, consider adding SourceAccount condition after initial deployment
+# Topic policy: only this account's receipt rule may publish via SES.
 resource "aws_sns_topic_policy" "maildummy" {
   arn = aws_sns_topic.maildummy.arn
 
@@ -212,14 +210,21 @@ resource "aws_sns_topic_policy" "maildummy" {
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "AllowSESPublish"
         Effect = "Allow"
         Principal = {
           Service = "ses.amazonaws.com"
         }
         Action   = "SNS:Publish"
         Resource = aws_sns_topic.maildummy.arn
-        # No conditions - AWS SES validation is very strict and can fail even with SourceAccount condition
-        # After successful deployment, you can manually add SourceAccount condition if needed for security
+        Condition = {
+          StringEquals = {
+            "AWS:SourceAccount" = data.aws_caller_identity.current.account_id
+          }
+          ArnLike = {
+            "AWS:SourceArn" = local.receipt_rule_arn
+          }
+        }
       }
     ]
   })
@@ -275,4 +280,7 @@ data "aws_caller_identity" "current" {}
 # Build SES inbound endpoint dynamically from region
 locals {
   ses_inbound_endpoint = "inbound-smtp.${var.aws_region}.amazonaws.com"
+
+  # ARN of the receipt rule, used as AWS:SourceArn in the S3 and SNS policies.
+  receipt_rule_arn = "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:receipt-rule-set/${var.receipt_rule_set_name}:receipt-rule/${var.receipt_rule_name}"
 }
