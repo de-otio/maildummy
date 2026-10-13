@@ -23,17 +23,21 @@ resource "aws_route53_record" "maildummy_verification" {
   records = [aws_ses_domain_identity.maildummy.verification_token]
 }
 
-# Verify domain identity (waits for DNS propagation)
-# TEMPORARILY COMMENTED OUT - causing pipeline hangs
-# resource "aws_ses_domain_identity_verification" "maildummy" {
-#   domain = aws_ses_domain_identity.maildummy.id
-#
-#   timeouts {
-#     create = "5m"
-#   }
-#
-#   depends_on = [aws_route53_record.maildummy_verification]
-# }
+# Optionally wait until SES reports the domain as verified. Off by default:
+# the apply blocks until DNS has propagated and SES has checked it, up to
+# verification_timeout. With dns_provider = "none" the records must already be
+# published elsewhere, or the wait times out.
+resource "aws_ses_domain_identity_verification" "maildummy" {
+  count = var.wait_for_verification ? 1 : 0
+
+  domain = aws_ses_domain_identity.maildummy.domain
+
+  timeouts {
+    create = var.verification_timeout
+  }
+
+  depends_on = [aws_route53_record.maildummy_verification]
+}
 
 # S3 bucket for storing incoming emails
 resource "aws_s3_bucket" "maildummy" {
@@ -241,33 +245,24 @@ resource "aws_route53_record" "maildummy_mx" {
   records = ["10 ${local.ses_inbound_endpoint}"]
 }
 
-# Enable DKIM signing for the domain (only after verification)
-# Note: Verification dependency temporarily removed - verification resource is commented out
+# Enable DKIM signing for the domain. SES returns the three tokens as soon as
+# this is created; the domain does not have to be verified first.
 resource "aws_ses_domain_dkim" "maildummy" {
   count  = var.enable_dkim ? 1 : 0
   domain = aws_ses_domain_identity.maildummy.domain
-
-  # depends_on = [aws_ses_domain_identity_verification.maildummy]  # Temporarily removed
 }
 
-# Local value to safely extract DKIM tokens
-locals {
-  dkim_tokens = var.enable_dkim && length(aws_ses_domain_dkim.maildummy) > 0 ? (
-    try(aws_ses_domain_dkim.maildummy[0].dkim_tokens, [])
-  ) : []
-}
-
-# Create DKIM CNAME records in Route53
+# Create DKIM CNAME records in Route53. SES always issues three tokens; the
+# count is static so the records plan even while the tokens are unknown (the
+# identity's first apply).
 resource "aws_route53_record" "maildummy_dkim" {
-  for_each = var.dns_provider == "route53" && length(local.dkim_tokens) > 0 ? {
-    for token in local.dkim_tokens : token => token
-  } : {}
+  count = var.dns_provider == "route53" && var.enable_dkim ? 3 : 0
 
   zone_id = var.route53_zone_id
-  name    = "${each.value}._domainkey.${var.maildummy_subdomain}"
+  name    = "${aws_ses_domain_dkim.maildummy[0].dkim_tokens[count.index]}._domainkey.${var.maildummy_subdomain}"
   type    = "CNAME"
   ttl     = 300
-  records = ["${each.value}.dkim.amazonses.com"]
+  records = ["${aws_ses_domain_dkim.maildummy[0].dkim_tokens[count.index]}.dkim.amazonses.com"]
 }
 
 # Note: The _amazonses TXT record is used for domain verification.

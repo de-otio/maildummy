@@ -93,6 +93,7 @@ that rule instead.
 | `aws_sns_topic` + policy | Optional email-arrival notifications (unencrypted unless `sns_kms_key_arn` is set); policy limited to this account's receipt rule |
 | `aws_ses_receipt_rule` | Routes inbound mail to S3 (and optionally SNS) |
 | `aws_ses_receipt_rule_set` | Only when `create_rule_set = true` |
+| `aws_ses_domain_identity_verification` | Only when `wait_for_verification = true`; waits for SES to verify the domain |
 | `aws_ses_active_receipt_rule_set` | Only when `activate_rule_set = true` |
 | `aws_route53_record` (MX, TXT, DKIM CNAMEs) | Only when `dns_provider = "route53"`; otherwise publish the `dns_records` output yourself |
 
@@ -114,7 +115,9 @@ that rule instead.
 | `receipt_rule_after` | `string` | no | `null` | Existing rule to place this rule after; `null` inserts it first |
 | `email_retention_days` | `number` | no | `1` | Days before emails are auto-deleted (must be > 0) |
 | `tags` | `map(string)` | no | `{}` | Tags applied to all taggable resources |
-| `enable_dkim` | `bool` | no | `false` | Create DKIM CNAME records (enable after domain verification) |
+| `enable_dkim` | `bool` | no | `false` | Enable Easy DKIM and publish its three CNAME records; works on the first apply |
+| `wait_for_verification` | `bool` | no | `false` | Block the apply until SES reports the domain as verified |
+| `verification_timeout` | `string` | no | `"15m"` | How long `wait_for_verification` waits (e.g. `"90s"`, `"15m"`, `"1h"`) |
 | `enable_sns_notifications` | `bool` | no | `true` | Add SNS action to the receipt rule |
 | `sns_kms_key_arn` | `string` | no | `null` | Customer-managed KMS key for the topic; its policy must grant `ses.amazonaws.com` `kms:GenerateDataKey*` and `kms:Decrypt`. `alias/aws/...` keys are rejected because SES cannot use them. |
 
@@ -149,8 +152,22 @@ topics encrypted with it), so the plan shows an in-place update removing its
 encryption; set `sns_kms_key_arn` to a customer-managed key to keep it encrypted.
 The topic policy gains `AWS:SourceAccount` and `AWS:SourceArn` conditions.
 
-**Route53 users:** no address changes. `dns_provider` no longer defaults to
-`"cloudflare"`, so keep `dns_provider = "route53"` set explicitly.
+**Route53 users:** `dns_provider` no longer defaults to `"cloudflare"`, so keep
+`dns_provider = "route53"` set explicitly. If `enable_dkim = true`, the DKIM
+records changed from token keys to indices (1.x used `for_each` over the tokens,
+which failed on a first apply). Add one `moved` block per token in your root
+module. Index `i` must be the token's position in the `dkim_tokens` list shown by
+`tofu state show 'module.maildummy.aws_ses_domain_dkim.maildummy[0]'`:
+
+```hcl
+moved {
+  from = module.maildummy.aws_route53_record.maildummy_dkim["<dkim_tokens[0]>"]
+  to   = module.maildummy.aws_route53_record.maildummy_dkim[0]
+}
+```
+
+Without them, the plan replaces the records and the create can fail because a
+record with the same name still exists.
 
 **Cloudflare users:** the Cloudflare records moved out of the core module. Set
 `dns_provider = "none"`, remove `cloudflare_zone_id`, add the
@@ -169,16 +186,17 @@ moved {
   to   = module.maildummy_cloudflare.cloudflare_dns_record.mx
 }
 
-# Only if enable_dkim = true. 1.x keyed the DKIM records by token; list them with
-#   tofu state list 'module.maildummy.cloudflare_dns_record.maildummy_dkim'
-# and add one block per token (indices 0, 1, 2 in any order).
+# Only if enable_dkim = true. 1.x keyed the DKIM records by token; add one block
+# per token. Index i must be the token's position in the dkim_tokens list shown by
+#   tofu state show 'module.maildummy.aws_ses_domain_dkim.maildummy[0]'
 moved {
-  from = module.maildummy.cloudflare_dns_record.maildummy_dkim["<token-1>"]
+  from = module.maildummy.cloudflare_dns_record.maildummy_dkim["<dkim_tokens[0]>"]
   to   = module.maildummy_cloudflare.cloudflare_dns_record.dkim[0]
 }
 ```
 
 Adjust `module.maildummy` / `module.maildummy_cloudflare` to the names you use.
 The new module writes fully qualified record names (1.x wrote names relative to the
-zone), so the first plan may show an in-place update of `name`; it must not show a
-destroy/create. Run `plan` and check before you `apply`.
+zone), so the first plan may show a change to `name`. Run `plan` and check it
+before you `apply`; if the provider replaces a record, it is recreated with a
+short gap in DNS for that record.

@@ -87,9 +87,26 @@ variable "tags" {
 }
 
 variable "enable_dkim" {
-  description = "Enable DKIM records creation (set to false for initial deployment, enable after domain verification)"
+  description = "Enable Easy DKIM for the domain and publish its three CNAME records. Works on the first apply; the domain need not be verified first."
   type        = bool
   default     = false
+}
+
+variable "wait_for_verification" {
+  description = "Block the apply until SES reports the domain identity as verified (aws_ses_domain_identity_verification)"
+  type        = bool
+  default     = false
+}
+
+variable "verification_timeout" {
+  description = "How long wait_for_verification waits before failing, as a duration such as \"15m\""
+  type        = string
+  default     = "15m"
+
+  validation {
+    condition     = can(regex("^[0-9]+(s|m|h)$", var.verification_timeout))
+    error_message = "verification_timeout must be a duration such as \"90s\", \"15m\" or \"1h\"."
+  }
 }
 
 variable "enable_sns_notifications" {

@@ -19,6 +19,7 @@ module "maildummy_route53" {
   sns_topic_name        = "example-maildummy-r53"
   receipt_rule_set_name = "example-rule-set"
   receipt_rule_name     = "example-maildummy-r53"
+  enable_dkim           = true
 }
 
 # Cloudflare users: the core module publishes nothing, the submodule takes its
