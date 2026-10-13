@@ -4,7 +4,7 @@
 
 - An AWS account with SES enabled in your target region
 - A DNS zone you control (Cloudflare, Route53, or another provider)
-- An **existing active SES receipt rule set** — AWS allows only one active rule set per region, so the module/construct appends to an existing one rather than creating its own
+- An active SES receipt rule set. AWS allows only one active rule set per region, so it must have exactly one owner. If something else already manages it, point `receipt_rule_set_name` / `receiptRuleSetName` at that set. In a fresh account, set `create_rule_set` and `activate_rule_set` (Terraform) or `createRuleSet` and `activateRuleSet` (CDK) to have maildummy create and activate one.
 
 ## Initial deployment
 

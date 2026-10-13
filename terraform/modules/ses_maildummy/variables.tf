@@ -42,13 +42,31 @@ variable "sns_topic_name" {
 }
 
 variable "receipt_rule_set_name" {
-  description = "Name of an existing SES receipt rule set to append the rule to. Only one active receipt rule set is allowed per region, so this must reference an existing ruleset."
+  description = "Name of the SES receipt rule set that holds the rule. Must already exist unless create_rule_set = true."
   type        = string
 }
 
+variable "create_rule_set" {
+  description = "Create the receipt rule set named receipt_rule_set_name. Leave false to add the rule to an existing set."
+  type        = bool
+  default     = false
+}
+
+variable "activate_rule_set" {
+  description = "Make receipt_rule_set_name the active receipt rule set. The active set is a per-region singleton: enable this only if no other configuration manages it. Destroying the module then disables email receiving in the region."
+  type        = bool
+  default     = false
+}
+
 variable "receipt_rule_name" {
-  description = "Name of the SES receipt rule to create and append to the existing ruleset"
+  description = "Name of the SES receipt rule to create"
   type        = string
+}
+
+variable "receipt_rule_after" {
+  description = "Name of an existing rule in the set to place this rule after. When null, SES inserts the rule at the beginning of the rule set."
+  type        = string
+  default     = null
 }
 
 variable "email_retention_days" {

@@ -8,6 +8,7 @@ import {
   aws_ses as ses,
   aws_route53 as route53,
   aws_iam as iam,
+  custom_resources as cr,
 } from "aws-cdk-lib";
 
 export interface MaildummyProps {
@@ -17,11 +18,36 @@ export interface MaildummyProps {
   readonly maildummyDomain: string;
 
   /**
-   * Name of an existing SES receipt rule set to append the rule to.
-   * Only one active receipt rule set is allowed per region, so this must
-   * reference an existing ruleset.
+   * Name of the SES receipt rule set that holds the rule.
+   * Must already exist unless `createRuleSet` is true.
    */
   readonly receiptRuleSetName: string;
+
+  /**
+   * Create the receipt rule set named `receiptRuleSetName`.
+   * Leave false to add the rule to an existing set.
+   * @default false
+   */
+  readonly createRuleSet?: boolean;
+
+  /**
+   * Make `receiptRuleSetName` the active receipt rule set (via a custom
+   * resource calling SES SetActiveReceiptRuleSet).
+   *
+   * The active rule set is a per-region singleton: enable this only if no
+   * other stack or tool manages it. Deleting the construct then disables
+   * email receiving in the region (SetActiveReceiptRuleSet with no name),
+   * whichever set is active at that time.
+   * @default false
+   */
+  readonly activateRuleSet?: boolean;
+
+  /**
+   * Name of an existing rule in the set to place this rule after.
+   * When omitted, SES inserts the rule at the beginning of the rule set.
+   * @default - first in the rule set
+   */
+  readonly receiptRuleAfter?: string;
 
   /**
    * Route53 hosted zone for DNS record creation.
@@ -209,8 +235,16 @@ export class Maildummy extends Construct {
       });
     }
 
+    const ruleSet = (props.createRuleSet ?? false)
+      ? new ses.CfnReceiptRuleSet(this, "ReceiptRuleSet", {
+          ruleSetName: props.receiptRuleSetName,
+        })
+      : undefined;
+
+    // Without `after`, SES inserts the rule at the beginning of the rule set.
     const cfnReceiptRule = new ses.CfnReceiptRule(this, "ReceiptRule", {
-      ruleSetName: props.receiptRuleSetName,
+      ruleSetName: ruleSet ? ruleSet.ref : props.receiptRuleSetName,
+      after: props.receiptRuleAfter,
       rule: {
         name: `${id}-maildummy-rule`,
         enabled: true,
@@ -223,6 +257,43 @@ export class Maildummy extends Construct {
     // Ensure policies are in place before the rule is created
     cfnReceiptRule.node.addDependency(this.bucket);
     cfnReceiptRule.node.addDependency(this.topic);
+
+    // ── Active Receipt Rule Set (optional) ───────────────────────────
+    // CloudFormation has no resource for the active rule set, so call SES
+    // directly. The activation depends on the rule, so it runs after the rule
+    // is created and, on delete, deactivates before the rule (and a rule set
+    // created above) is removed.
+
+    if (props.activateRuleSet ?? false) {
+      const activation = new cr.AwsCustomResource(this, "ActiveReceiptRuleSet", {
+        onCreate: {
+          service: "SES",
+          action: "SetActiveReceiptRuleSet",
+          parameters: { RuleSetName: props.receiptRuleSetName },
+          physicalResourceId: cr.PhysicalResourceId.of(
+            `active-receipt-rule-set-${props.receiptRuleSetName}`
+          ),
+        },
+        onUpdate: {
+          service: "SES",
+          action: "SetActiveReceiptRuleSet",
+          parameters: { RuleSetName: props.receiptRuleSetName },
+          physicalResourceId: cr.PhysicalResourceId.of(
+            `active-receipt-rule-set-${props.receiptRuleSetName}`
+          ),
+        },
+        onDelete: {
+          service: "SES",
+          action: "SetActiveReceiptRuleSet",
+          parameters: {},
+        },
+        policy: cr.AwsCustomResourcePolicy.fromSdkCalls({
+          resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE,
+        }),
+        installLatestAwsSdk: false,
+      });
+      activation.node.addDependency(cfnReceiptRule);
+    }
 
     // ── DNS Records (Route53 only) ───────────────────────────────────
 

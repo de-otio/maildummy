@@ -24,7 +24,7 @@ output "sns_topic_name" {
 }
 
 output "receipt_rule_set_name" {
-  description = "SES receipt rule set name (the existing ruleset the rule was appended to)"
+  description = "SES receipt rule set name that holds the rule"
   value       = var.receipt_rule_set_name
 }
 

@@ -60,7 +60,29 @@ Set `dns_provider = "none"` and publish the records in the `dns_records` output
 - Terraform >= 1.0 or OpenTofu
 - AWS provider >= 5.0, < 7.0 (both 5.x and 6.x are tested)
 - Cloudflare provider >= 5.12.0, < 6.0.0, only if you use the `ses_maildummy_cloudflare` module
-- An **existing active SES receipt rule set** (AWS allows only one active rule set per region; the module appends a rule to it rather than creating one)
+- An SES receipt rule set, active in the region (see [Receipt rule set](#receipt-rule-set))
+
+## Receipt rule set
+
+SES only delivers mail through the **active** receipt rule set, and each region has
+at most one. That makes the active set a per-region singleton: exactly one
+configuration must own it.
+
+- **Default** (`create_rule_set = false`, `activate_rule_set = false`): the module
+  adds its rule to the existing set `receipt_rule_set_name` and leaves activation
+  alone. Use this when something else owns the active set.
+- **`create_rule_set = true`**: the module creates `receipt_rule_set_name`.
+- **`activate_rule_set = true`**: the module makes `receipt_rule_set_name` the active
+  set. Enable it only if nothing else manages the active set. Destroying the module
+  then disables email receiving in the region (the provider calls
+  `SetActiveReceiptRuleSet` with no name, whichever set is active at the time).
+
+An account with no active set receives nothing, so a fresh account needs both
+options, or a set created and activated elsewhere.
+
+Without `receipt_rule_after`, SES inserts the rule at the **beginning** of the
+rule set. Set `receipt_rule_after` to the name of an existing rule to place it after
+that rule instead.
 
 ## Resources created
 
@@ -70,6 +92,8 @@ Set `dns_provider = "none"` and publish the records in the `dns_records` output
 | `aws_s3_bucket` + policies | Stores emails under `raw/`, encrypted (AES256), lifecycle-managed |
 | `aws_sns_topic` + policy | Optional email-arrival notifications (KMS-encrypted) |
 | `aws_ses_receipt_rule` | Routes inbound mail to S3 (and optionally SNS) |
+| `aws_ses_receipt_rule_set` | Only when `create_rule_set = true` |
+| `aws_ses_active_receipt_rule_set` | Only when `activate_rule_set = true` |
 | `aws_route53_record` (MX, TXT, DKIM CNAMEs) | Only when `dns_provider = "route53"`; otherwise publish the `dns_records` output yourself |
 
 ## Variables
@@ -83,8 +107,11 @@ Set `dns_provider = "none"` and publish the records in the `dns_records` output
 | `aws_region` | `string` | no | `"eu-central-1"` | AWS region for SES |
 | `s3_bucket_name` | `string` | yes | — | S3 bucket name |
 | `sns_topic_name` | `string` | yes | — | SNS topic name |
-| `receipt_rule_set_name` | `string` | yes | — | Existing SES receipt rule set to append to |
+| `receipt_rule_set_name` | `string` | yes | — | Receipt rule set that holds the rule (must exist unless `create_rule_set`) |
+| `create_rule_set` | `bool` | no | `false` | Create `receipt_rule_set_name` |
+| `activate_rule_set` | `bool` | no | `false` | Make `receipt_rule_set_name` the active set (per-region singleton; one owner only) |
 | `receipt_rule_name` | `string` | yes | — | Name for the new receipt rule |
+| `receipt_rule_after` | `string` | no | `null` | Existing rule to place this rule after; `null` inserts it first |
 | `email_retention_days` | `number` | no | `1` | Days before emails are auto-deleted (must be > 0) |
 | `tags` | `map(string)` | no | `{}` | Tags applied to all taggable resources |
 | `enable_dkim` | `bool` | no | `false` | Create DKIM CNAME records (enable after domain verification) |
@@ -99,7 +126,7 @@ Set `dns_provider = "none"` and publish the records in the `dns_records` output
 | `s3_bucket_arn` | S3 bucket ARN |
 | `sns_topic_arn` | SNS topic ARN |
 | `sns_topic_name` | SNS topic name |
-| `receipt_rule_set_name` | The receipt rule set the rule was appended to |
+| `receipt_rule_set_name` | The receipt rule set that holds the rule |
 | `ses_identity_arn` | SES domain identity ARN |
 | `dns_records` | Records to publish: `verification` (TXT), `mx`, and `dkim` (list of CNAMEs, empty unless `enable_dkim`). Each has a fully qualified `name`, `type`, `ttl` and `value`; `mx` also has `priority`. |
 

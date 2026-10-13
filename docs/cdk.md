@@ -55,7 +55,10 @@ const maildummy = new Maildummy(stack, "Maildummy", {
 | Prop | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
 | `maildummyDomain` | `string` | yes | — | Full domain, e.g. `maildummy.example.com` |
-| `receiptRuleSetName` | `string` | yes | — | Existing SES receipt rule set to append to |
+| `receiptRuleSetName` | `string` | yes | — | Receipt rule set that holds the rule (must exist unless `createRuleSet`) |
+| `createRuleSet` | `boolean` | no | `false` | Create `receiptRuleSetName` |
+| `activateRuleSet` | `boolean` | no | `false` | Make `receiptRuleSetName` the active set via a custom resource (see below) |
+| `receiptRuleAfter` | `string` | no | — | Existing rule to place this rule after; omitted, SES inserts it first |
 | `hostedZone` | `IHostedZone` | no | — | Route53 zone; omit to skip DNS record creation |
 | `bucketName` | `string` | no | auto | S3 bucket name |
 | `snsTopicName` | `string` | no | auto | SNS topic name |
@@ -63,6 +66,21 @@ const maildummy = new Maildummy(stack, "Maildummy", {
 | `enableSnsNotifications` | `boolean` | no | `true` | Add SNS action to the receipt rule |
 | `enableDkim` | `boolean` | no | `false` | Enable DKIM signing (after domain verification) |
 | `bucketRemovalPolicy` | `RemovalPolicy` | no | `DESTROY` | Removal policy for the S3 bucket |
+
+## Receipt rule set
+
+SES delivers mail only through the active receipt rule set, and each region has at
+most one, so exactly one stack or tool must own it. By default the construct adds
+its rule to the existing set `receiptRuleSetName` and does not touch activation.
+
+`createRuleSet: true` creates the set (`AWS::SES::ReceiptRuleSet`).
+`activateRuleSet: true` adds an `AwsCustomResource` (a Lambda-backed custom resource
+calling SES `SetActiveReceiptRuleSet`) that activates the set after the rule exists.
+On stack deletion it calls `SetActiveReceiptRuleSet` with no name, which disables
+email receiving in the region whichever set is active at that time. Enable it only
+if nothing else manages the active set.
+
+Without `receiptRuleAfter`, SES inserts the rule at the beginning of the rule set.
 
 ## Exposed properties
 
