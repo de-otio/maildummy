@@ -1,5 +1,6 @@
 import { Construct } from "constructs";
 import {
+  CfnOutput,
   Duration,
   RemovalPolicy,
   Stack,
@@ -80,9 +81,14 @@ export interface MaildummyProps {
   readonly enableSnsNotifications?: boolean;
 
   /**
-   * Enable DKIM signing for the domain.
-   * Set to false for initial deployment; enable after domain verification.
-   * @default false
+   * Whether SES DKIM-signs mail sent from the domain (Easy DKIM, 2048-bit key).
+   *
+   * This does NOT control domain verification. SES verifies a domain identity
+   * by finding the three Easy DKIM CNAME records in DNS, so those records are
+   * always exposed (and created in Route53 when `hostedZone` is given),
+   * whatever this is set to. When false, the records still prove ownership
+   * but SES leaves DKIM signing switched off for the identity.
+   * @default true
    */
   readonly enableDkim?: boolean;
 
@@ -93,18 +99,27 @@ export interface MaildummyProps {
   readonly bucketRemovalPolicy?: RemovalPolicy;
 }
 
+/** A DNS CNAME record, as a name/value pair. */
+export interface DkimRecord {
+  /** Fully qualified record name. */
+  readonly name: string;
+  /** Record target. */
+  readonly value: string;
+}
+
 /**
  * CDK construct that creates SES email testing infrastructure.
  *
  * Mirrors the functionality of the Terraform `ses_maildummy` module:
- * - SES domain identity (SESv2) with optional DKIM
+ * - SES domain identity (SESv2), verified via Easy DKIM CNAME records
  * - S3 bucket for storing incoming emails (encrypted, lifecycle-managed)
  * - SNS topic for email notifications (encrypted)
  * - SES receipt rule routing emails to S3 (and optionally SNS)
  * - Route53 DNS records (MX + DKIM CNAMEs) when a hosted zone is provided
  *
  * For Cloudflare or other DNS providers, omit `hostedZone` and configure DNS
- * records externally using the exposed `dkimTokens` property and the
+ * records externally using the exposed `dkimRecords` property (or the
+ * `DkimRecordName*` / `DkimRecordValue*` stack outputs) and the
  * MX endpoint `inbound-smtp.<region>.amazonaws.com`.
  */
 export class Maildummy extends Construct {
@@ -117,7 +132,18 @@ export class Maildummy extends Construct {
   /** The SES domain identity (L1 CfnEmailIdentity). */
   public readonly domainIdentity: ses.CfnEmailIdentity;
 
-  /** DKIM tokens for external DNS setup (empty if DKIM is disabled). */
+  /**
+   * The three Easy DKIM CNAME records that verify the domain, as name/value
+   * pairs. Create them in any DNS provider (they are created automatically in
+   * Route53 when `hostedZone` is provided). Names are fully qualified
+   * (`<token>._domainkey.<domain>`); values are `<token>.dkim.amazonses.com`.
+   */
+  public readonly dkimRecords: DkimRecord[];
+
+  /**
+   * DKIM CNAME record names only. Kept for backward compatibility; prefer
+   * `dkimRecords`, which also carries the values.
+   */
   public readonly dkimTokens: string[];
 
   constructor(scope: Construct, id: string, props: MaildummyProps) {
@@ -128,7 +154,7 @@ export class Maildummy extends Construct {
     const account = stack.account;
     const emailRetentionDays = props.emailRetentionDays ?? 1;
     const enableSns = props.enableSnsNotifications ?? true;
-    const enableDkim = props.enableDkim ?? false;
+    const enableDkim = props.enableDkim ?? true;
     const removalPolicy = props.bucketRemovalPolicy ?? RemovalPolicy.DESTROY;
 
     if (!props.maildummyDomain || !/^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*$/.test(props.maildummyDomain)) {
@@ -141,13 +167,24 @@ export class Maildummy extends Construct {
 
     // ── SES Domain Identity ──────────────────────────────────────────
 
-    // SESv2 CfnEmailIdentity — uses DKIM-based verification by default.
+    // SESv2 CfnEmailIdentity. A domain identity without BYODKIM uses Easy DKIM,
+    // and SES verifies it by finding the three DKIM CNAME records in DNS (there
+    // is no _amazonses TXT record in SESv2). The records are therefore always
+    // emitted below; `enableDkim` only decides whether SES signs mail.
     this.domainIdentity = new ses.CfnEmailIdentity(this, "DomainIdentity", {
       emailIdentity: props.maildummyDomain,
+      dkimAttributes: { signingEnabled: enableDkim },
       dkimSigningAttributes: enableDkim
         ? { nextSigningKeyLength: "RSA_2048_BIT" }
         : undefined,
     });
+
+    // The three Easy DKIM CNAMEs (name and target) that verify the domain.
+    this.dkimRecords = [1, 2, 3].map((i) => ({
+      name: this.domainIdentity.getAtt(`DkimDNSTokenName${i}`).toString(),
+      value: this.domainIdentity.getAtt(`DkimDNSTokenValue${i}`).toString(),
+    }));
+    this.dkimTokens = this.dkimRecords.map((record) => record.name);
 
     // ── S3 Bucket ────────────────────────────────────────────────────
 
@@ -318,35 +355,33 @@ export class Maildummy extends Construct {
         ttl: Duration.seconds(300),
       });
 
-      // DKIM CNAME records (SESv2 CfnEmailIdentity provides 3 DKIM tokens)
+      // DKIM CNAME records — these verify the domain, so always create them.
       // Uses L1 CfnRecordSet because DkimDNSTokenName returns the full FQDN
       // (e.g. token._domainkey.maildummy.example.com) and the L2 CnameRecord
       // would append the zone name again.
-      if (enableDkim) {
-        for (let i = 1; i <= 3; i++) {
-          const tokenName = this.domainIdentity
-            .getAtt(`DkimDNSTokenName${i}`)
-            .toString();
-          const tokenValue = this.domainIdentity
-            .getAtt(`DkimDNSTokenValue${i}`)
-            .toString();
-
-          new route53.CfnRecordSet(this, `DkimRecord${i}`, {
-            hostedZoneId: props.hostedZone.hostedZoneId,
-            name: tokenName,
-            type: "CNAME",
-            ttl: "300",
-            resourceRecords: [tokenValue],
-          });
-        }
-      }
+      this.dkimRecords.forEach((record, index) => {
+        new route53.CfnRecordSet(this, `DkimRecord${index + 1}`, {
+          hostedZoneId: props.hostedZone!.hostedZoneId,
+          name: record.name,
+          type: "CNAME",
+          ttl: "300",
+          resourceRecords: [record.value],
+        });
+      });
     }
 
-    // Store DKIM tokens for external DNS setup
-    this.dkimTokens = enableDkim
-      ? [1, 2, 3].map((i) =>
-          this.domainIdentity.getAtt(`DkimDNSTokenName${i}`).toString()
-        )
-      : [];
+    // ── Outputs ──────────────────────────────────────────────────────
+    // Name/value pairs so the CNAMEs can be created in any DNS provider.
+
+    this.dkimRecords.forEach((record, index) => {
+      new CfnOutput(this, `DkimRecordName${index + 1}`, {
+        value: record.name,
+        description: `DKIM CNAME record ${index + 1} name`,
+      });
+      new CfnOutput(this, `DkimRecordValue${index + 1}`, {
+        value: record.value,
+        description: `DKIM CNAME record ${index + 1} value`,
+      });
+    });
   }
 }

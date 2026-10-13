@@ -1,2 +1,1 @@
-export { Maildummy, MaildummyProps } from "./maildummy";
-
+export { Maildummy, MaildummyProps, DkimRecord } from "./maildummy";
