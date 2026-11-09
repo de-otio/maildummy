@@ -478,6 +478,80 @@ describe("Maildummy", () => {
     });
   });
 
+  // ── Receipt Rule Options (scan, TLS, stop) ───────────────────────
+
+  describe("receipt rule options", () => {
+    function rule(props: Partial<MaildummyProps> = {}) {
+      const { template } = createStack({ ...defaultProps, ...props });
+      const rules = template.findResources("AWS::SES::ReceiptRule");
+      expect(Object.keys(rules)).toHaveLength(1);
+      return Object.values(rules)[0].Properties.Rule;
+    }
+
+    it("defaults match 2.0.0: scan off, no TlsPolicy, S3 then SNS, no Stop", () => {
+      const r = rule();
+      expect(r.ScanEnabled).toBe(false);
+      expect(r).not.toHaveProperty("TlsPolicy");
+      expect(r.Actions.map((a: object) => Object.keys(a)[0])).toEqual([
+        "S3Action",
+        "SNSAction",
+      ]);
+    });
+
+    it("scanEnabled: true sets ScanEnabled", () => {
+      expect(rule({ scanEnabled: true }).ScanEnabled).toBe(true);
+    });
+
+    it("scanEnabled: false keeps ScanEnabled false", () => {
+      expect(rule({ scanEnabled: false }).ScanEnabled).toBe(false);
+    });
+
+    it("tlsPolicy: Require sets TlsPolicy", () => {
+      expect(rule({ tlsPolicy: "Require" }).TlsPolicy).toBe("Require");
+    });
+
+    it("tlsPolicy: Optional sets TlsPolicy", () => {
+      expect(rule({ tlsPolicy: "Optional" }).TlsPolicy).toBe("Optional");
+    });
+
+    it("stopAfterActions: true appends a RuleSet-scoped Stop as the last action", () => {
+      const actions = rule({ stopAfterActions: true }).Actions;
+      expect(actions.map((a: object) => Object.keys(a)[0])).toEqual([
+        "S3Action",
+        "SNSAction",
+        "StopAction",
+      ]);
+      expect(actions[2].StopAction).toEqual({ Scope: "RuleSet" });
+    });
+
+    it("stopAfterActions: true without SNS puts Stop right after S3", () => {
+      const actions = rule({
+        stopAfterActions: true,
+        enableSnsNotifications: false,
+      }).Actions;
+      expect(actions.map((a: object) => Object.keys(a)[0])).toEqual([
+        "S3Action",
+        "StopAction",
+      ]);
+    });
+
+    it("stopAfterActions: false adds no Stop", () => {
+      const actions = rule({ stopAfterActions: false }).Actions;
+      expect(actions.some((a: object) => "StopAction" in a)).toBe(false);
+    });
+
+    it("all three set together", () => {
+      const r = rule({
+        scanEnabled: true,
+        tlsPolicy: "Require",
+        stopAfterActions: true,
+      });
+      expect(r.ScanEnabled).toBe(true);
+      expect(r.TlsPolicy).toBe("Require");
+      expect(Object.keys(r.Actions[r.Actions.length - 1])).toEqual(["StopAction"]);
+    });
+  });
+
   // ── Receipt Rule Set ─────────────────────────────────────────────
 
   describe("receipt rule set", () => {
@@ -628,6 +702,16 @@ describe("Maildummy", () => {
       expect(construct.bucket).toBeDefined();
       expect(construct.topic).toBeDefined();
       expect(construct.domainIdentity).toBeDefined();
+    });
+
+    it("exposes the receipt rule as receiptRule", () => {
+      const { construct, stack } = createStack({
+        ...defaultProps,
+        tlsPolicy: "Require",
+      });
+      expect(construct.receiptRule.cfnResourceType).toBe("AWS::SES::ReceiptRule");
+      const rules = Template.fromStack(stack).findResources("AWS::SES::ReceiptRule");
+      expect(Object.keys(rules)).toEqual([stack.getLogicalId(construct.receiptRule)]);
     });
 
     it("dkimTokens has 3 entries by default", () => {

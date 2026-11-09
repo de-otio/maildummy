@@ -98,6 +98,30 @@ export interface MaildummyProps {
    * @default RemovalPolicy.DESTROY
    */
   readonly bucketRemovalPolicy?: RemovalPolicy;
+
+  /**
+   * Have SES scan received mail for spam and viruses. The verdicts are added
+   * to the stored message as `X-SES-Spam-Verdict` and `X-SES-Virus-Verdict`
+   * headers.
+   * @default false
+   */
+  readonly scanEnabled?: boolean;
+
+  /**
+   * TLS policy for the receipt rule. `Require` makes SES bounce mail that was
+   * not sent over TLS.
+   * @default - not set (SES treats it as `Optional`)
+   */
+  readonly tlsPolicy?: "Require" | "Optional";
+
+  /**
+   * Append a Stop action (scope `RuleSet`) after the S3 and SNS actions, so
+   * later rules in the rule set do not also process mail for this domain.
+   * Use it when the rule shares a rule set with rules that match broader
+   * recipients.
+   * @default false
+   */
+  readonly stopAfterActions?: boolean;
 }
 
 /** A DNS CNAME record, as a name/value pair. */
@@ -146,6 +170,9 @@ export class Maildummy extends Construct {
    * `dkimRecords`, which also carries the values.
    */
   public readonly dkimTokens: string[];
+
+  /** The SES receipt rule (L1 CfnReceiptRule). */
+  public readonly receiptRule: ses.CfnReceiptRule;
 
   constructor(scope: Construct, id: string, props: MaildummyProps) {
     super(scope, id);
@@ -289,6 +316,14 @@ export class Maildummy extends Construct {
       });
     }
 
+    // Stop must be the last action: SES runs actions in order, and a Stop
+    // placed earlier would skip the S3/SNS delivery.
+    if (props.stopAfterActions ?? false) {
+      receiptRuleActions.push({
+        stopAction: { scope: "RuleSet" },
+      });
+    }
+
     const ruleSet = (props.createRuleSet ?? false)
       ? new ses.CfnReceiptRuleSet(this, "ReceiptRuleSet", {
           ruleSetName: props.receiptRuleSetName,
@@ -302,11 +337,14 @@ export class Maildummy extends Construct {
       rule: {
         name: receiptRuleName,
         enabled: true,
-        scanEnabled: false,
+        scanEnabled: props.scanEnabled ?? false,
+        // Left out when unset so the template matches 2.0.0.
+        tlsPolicy: props.tlsPolicy,
         recipients: [props.maildummyDomain],
         actions: receiptRuleActions,
       },
     });
+    this.receiptRule = cfnReceiptRule;
 
     // Ensure policies are in place before the rule is created
     cfnReceiptRule.node.addDependency(this.bucket);

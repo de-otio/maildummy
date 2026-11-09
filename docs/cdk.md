@@ -74,6 +74,9 @@ provider proxies records (e.g. Cloudflare), set them to DNS-only.
 | `enableSnsNotifications` | `boolean` | no | `true` | Add SNS action to the receipt rule |
 | `enableDkim` | `boolean` | no | `true` | DKIM signing for the identity (2048-bit Easy DKIM). `false` turns signing off only; the verification CNAMEs are always emitted |
 | `bucketRemovalPolicy` | `RemovalPolicy` | no | `DESTROY` | Removal policy for the S3 bucket |
+| `scanEnabled` | `boolean` | no | `false` | SES spam and virus scanning; verdicts land in `X-SES-Spam-Verdict` / `X-SES-Virus-Verdict` headers |
+| `tlsPolicy` | `"Require" \| "Optional"` | no | — (SES: `Optional`) | `Require` bounces mail not received over TLS |
+| `stopAfterActions` | `boolean` | no | `false` | Append a Stop action (scope `RuleSet`) after S3 and SNS (see below) |
 
 ## Receipt rule set
 
@@ -90,6 +93,11 @@ if nothing else manages the active set.
 
 Without `receiptRuleAfter`, SES inserts the rule at the beginning of the rule set.
 
+In a set shared with other rules, a later rule whose recipients include the
+maildummy domain (or that has no recipient filter) also receives the mail.
+`stopAfterActions: true` appends a Stop action as the rule's last action, so SES
+stops evaluating the set once the mail is stored.
+
 ## Exposed properties
 
 | Property | Type | Description |
@@ -99,6 +107,7 @@ Without `receiptRuleAfter`, SES inserts the rule at the beginning of the rule se
 | `domainIdentity` | `ses.CfnEmailIdentity` | The SES domain identity (L1) |
 | `dkimRecords` | `{ name, value }[]` | The three Easy DKIM CNAME records that verify the domain (always three) |
 | `dkimTokens` | `string[]` | The CNAME names from `dkimRecords`; kept for backward compatibility |
+| `receiptRule` | `ses.CfnReceiptRule` | The SES receipt rule (L1) |
 
 ## Resources created
 
