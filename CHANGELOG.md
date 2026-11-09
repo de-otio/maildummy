@@ -6,6 +6,19 @@ The repository releases each artifact on its own tag series (see
 - `tf-v<version>`: the Terraform modules under `terraform/modules/`
 - `cdk-v<version>`: `@de-otio/maildummy-cdk` on npm
 
+## @de-otio/maildummy-cdk 2.1.0 (`cdk-v2.1.0`)
+
+### Added
+
+- `scanEnabled` prop: SES spam and virus scanning on the receipt rule
+  (default `false`, as before).
+- `tlsPolicy` prop (`"Require"` or `"Optional"`); unset by default, as before.
+- `stopAfterActions` prop: appends a `RuleSet`-scoped Stop action after the S3
+  and SNS actions (default `false`).
+- `receiptRule` property exposing the `CfnReceiptRule`.
+
+With none of the new props set, the synthesized template is unchanged from 2.0.0.
+
 ## Terraform modules 2.0.0 (`tf-v2.0.0`)
 
 First tagged Terraform release. Earlier consumers pinned `main` or a commit;
