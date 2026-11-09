@@ -26,7 +26,10 @@ node_modules/
 
 # CDK build output
 cdk/lib/
+cdk/cdk.out/
+cdk/coverage/
 .claude/
+tmp/
 
 # Python
 python/.venv/
