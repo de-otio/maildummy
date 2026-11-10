@@ -16,12 +16,9 @@ Use `npm run watch` to recompile on changes during development.
 
 ## Publishing to npm
 
-```bash
-npm run build
-npm publish --access public
-```
+Releases are published from CI, not from a workstation. Bump `version` in `cdk/package.json`, merge, then create a GitHub release tagged `cdk-v<version>`. The [publish workflow](../.github/workflows/publish.yml) builds and tests that tag and stages it on npm with `npm stage publish` (Trusted Publishing, with provenance). The version goes live only after a maintainer approves it with 2FA, either on npmjs.com (package, then **Staged Packages**, then **Approve**) or with `npm stage approve <stage-id>`.
 
-The `prepublishOnly` script runs the build automatically, so `npm publish` alone is sufficient.
+If the run for a release fails, fix the cause and stage the same tag again from the Actions tab (**Publish to npm**, then **Run workflow**, with the tag as input). A version that is already staged has to be approved or rejected (`npm stage reject <stage-id>`) before it can be staged again.
 
 The `files` field in `package.json` ensures only `lib/**/*.js` and `lib/**/*.d.ts` are included in the published package.
 

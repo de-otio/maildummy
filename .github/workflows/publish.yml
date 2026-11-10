@@ -1,15 +1,29 @@
 name: Publish to npm
 
-# Publishes @de-otio/maildummy-cdk (the cdk/ package) via npm Trusted Publishing
-# (OIDC, no NPM_TOKEN). Only a release whose tag is `cdk-v<version>` publishes;
-# Terraform releases (`tf-v*`) and anything else are skipped by the job `if:`.
+# Stages @de-otio/maildummy-cdk (the cdk/ package) on npm via Trusted
+# Publishing (OIDC, no NPM_TOKEN) with `npm stage publish`. Nothing goes live
+# until a maintainer approves the staged version with 2FA, on npmjs.com
+# (package -> Staged Packages -> Approve) or with `npm stage approve <stage-id>`.
+#
+# Triggers:
+# - a published release whose tag is `cdk-v<version>`; Terraform releases
+#   (`tf-v*`) and anything else are skipped by the job `if:`;
+# - a manual run (workflow_dispatch) naming an existing `cdk-v<version>` tag.
+#   It builds that tag's code with this (default-branch) workflow, so a release
+#   whose own workflow copy failed can still be staged without moving its tag.
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing cdk-v<version> tag to stage"
+        required: true
+        type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: false
 
 permissions:
@@ -17,50 +31,54 @@ permissions:
 
 jobs:
   publish:
-    # Defence in depth, step 1: a tf-v* (or any non cdk-v*) release never
-    # starts this job. Step 2 is the exact tag/version check below.
-    if: startsWith(github.event.release.tag_name, 'cdk-v')
+    # Defence in depth, step 1: only cdk-v* tags start this job. Step 2 is the
+    # exact tag/version check below.
+    if: >-
+      (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'cdk-v')) ||
+      (github.event_name == 'workflow_dispatch' && startsWith(inputs.tag, 'cdk-v'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
       id-token: write
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
 
     steps:
       - uses: actions/checkout@v7
         with:
+          # refs/tags/ so a branch that happens to be named cdk-v* is never built.
+          ref: refs/tags/${{ env.TAG }}
           persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          # Node 24 ships npm 11, which Trusted Publishing needs (>= 11.5.1).
+          # Node 24 ships npm 11 (11.19.1 at the time of writing).
           node-version: 24
           registry-url: 'https://registry.npmjs.org'
 
       # NODE_AUTH_TOKEN must stay unset anywhere in this workflow: if present,
       # npm uses it instead of the OIDC exchange and Trusted Publishing never
       # engages.
-      - name: Require npm >= 11.5.1
+      - name: Require npm >= 11.15.0
         run: |
-          required=11.5.1
+          required=11.15.0
           have=$(npm --version)
           echo "npm $have (need >= $required)"
           oldest=$(printf '%s\n%s\n' "$required" "$have" | sort -V | head -n1)
           if [ "$oldest" != "$required" ]; then
-            echo "::error::npm $have is older than $required; Trusted Publishing needs >= $required"
+            echo "::error::npm $have is older than $required; npm stage publish needs >= $required"
             exit 1
           fi
 
-      - name: Check release tag matches cdk/package.json version
+      - name: Check tag matches cdk/package.json version
         working-directory: cdk
-        env:
-          TAG: ${{ github.event.release.tag_name }}
         run: |
           version=$(node -p "require('./package.json').version")
           expected="cdk-v${version}"
           if [ "$TAG" != "$expected" ]; then
-            echo "::error::Release tag '$TAG' does not match cdk/package.json version (expected '$expected')"
+            echo "::error::Tag '$TAG' does not match cdk/package.json version (expected '$expected')"
             exit 1
           fi
           echo "Tag $TAG matches package version $version"
@@ -75,7 +93,11 @@ jobs:
         timeout-minutes: 10
         run: npm run build && npm test
 
-      - name: Publish
+      - name: Stage on npm
         working-directory: cdk
         timeout-minutes: 5
-        run: npm publish --provenance --access public
+        run: npm stage publish --provenance --access public
+
+      - name: Approval reminder
+        run: |
+          echo "::notice::Staged $TAG on npm. Approve it with 2FA: npmjs.com -> @de-otio/maildummy-cdk -> Staged Packages, or npm stage list / npm stage approve <stage-id>."
